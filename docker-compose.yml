@@ -1,0 +1,110 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: nrtaxai-postgres
+    environment:
+      POSTGRES_USER: nrtaxai
+      POSTGRES_PASSWORD: nrtaxai_dev_password
+      POSTGRES_DB: nrtaxai
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/init_db.py:/docker-entrypoint-initdb.d/init.py
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nrtaxai"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: nrtaxai-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: nrtaxai-backend
+    environment:
+      DATABASE_URL: postgresql://nrtaxai:nrtaxai_dev_password@postgres:5432/nrtaxai
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: dev-secret-key-change-in-production
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      S3_BUCKET_UPLOADS: nrtaxai-uploads
+      S3_BUCKET_PDFS: nrtaxai-pdfs
+      S3_BUCKET_EXTRACTS: nrtaxai-extracts
+      KMS_KEY_ID: ${KMS_KEY_ID}
+      ENVIRONMENT: development
+      DEBUG: "true"
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+  
+  # Frontend (Development mode with hot reload)
+  frontend:
+    image: node:18-alpine
+    container_name: nrtaxai-frontend
+    working_dir: /app
+    environment:
+      REACT_APP_API_URL: http://localhost:8000/api/v1
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    command: sh -c "npm install && npm start"
+  
+  # LocalStack (for local AWS testing)
+  localstack:
+    image: localstack/localstack:latest
+    container_name: nrtaxai-localstack
+    environment:
+      SERVICES: s3,kms,sqs,lambda,textract
+      DEBUG: 1
+      DATA_DIR: /tmp/localstack/data
+      AWS_DEFAULT_REGION: us-east-1
+    ports:
+      - "4566:4566"
+    volumes:
+      - localstack_data:/tmp/localstack
+
+volumes:
+  postgres_data:
+  redis_data:
+  localstack_data:
+
+networks:
+  default:
+    name: nrtaxai-network

@@ -1,0 +1,252 @@
+{
+  "waf_configuration": {
+    "name": "NRTaxAI-WAF",
+    "description": "Web Application Firewall for NRTaxAI API protection",
+    
+    "rules": [
+      {
+        "name": "RateLimitRule",
+        "priority": 1,
+        "action": "BLOCK",
+        "statement": {
+          "rateBasedStatement": {
+            "limit": 2000,
+            "aggregateKeyType": "IP"
+          }
+        },
+        "description": "Block IPs making more than 2000 requests per 5 minutes"
+      },
+      
+      {
+        "name": "GeoBlockingRule",
+        "priority": 2,
+        "action": "BLOCK",
+        "statement": {
+          "geoMatchStatement": {
+            "countryCodes": ["KP", "IR", "SY", "CU"]
+          }
+        },
+        "description": "Block traffic from sanctioned countries"
+      },
+      
+      {
+        "name": "SQLInjectionRule",
+        "priority": 3,
+        "action": "BLOCK",
+        "statement": {
+          "sqliMatchStatement": {
+            "fieldToMatch": {
+              "allQueryArguments": {}
+            },
+            "textTransformations": [
+              {
+                "priority": 0,
+                "type": "URL_DECODE"
+              },
+              {
+                "priority": 1,
+                "type": "HTML_ENTITY_DECODE"
+              }
+            ]
+          }
+        },
+        "description": "Block SQL injection attempts"
+      },
+      
+      {
+        "name": "XSSRule",
+        "priority": 4,
+        "action": "BLOCK",
+        "statement": {
+          "xssMatchStatement": {
+            "fieldToMatch": {
+              "allQueryArguments": {}
+            },
+            "textTransformations": [
+              {
+                "priority": 0,
+                "type": "URL_DECODE"
+              },
+              {
+                "priority": 1,
+                "type": "HTML_ENTITY_DECODE"
+              }
+            ]
+          }
+        },
+        "description": "Block XSS attacks"
+      },
+      
+      {
+        "name": "SizeRestrictionRule",
+        "priority": 5,
+        "action": "BLOCK",
+        "statement": {
+          "sizeConstraintStatement": {
+            "fieldToMatch": {
+              "body": {}
+            },
+            "comparisonOperator": "GT",
+            "size": 10485760,
+            "textTransformations": [
+              {
+                "priority": 0,
+                "type": "NONE"
+              }
+            ]
+          }
+        },
+        "description": "Block requests with body larger than 10MB"
+      },
+      
+      {
+        "name": "KnownBadInputsRule",
+        "priority": 6,
+        "action": "BLOCK",
+        "statement": {
+          "managedRuleGroupStatement": {
+            "vendorName": "AWS",
+            "name": "AWSManagedRulesKnownBadInputsRuleSet"
+          }
+        },
+        "description": "AWS managed rule for known bad inputs"
+      },
+      
+      {
+        "name": "CoreRuleSet",
+        "priority": 7,
+        "action": "BLOCK",
+        "statement": {
+          "managedRuleGroupStatement": {
+            "vendorName": "AWS",
+            "name": "AWSManagedRulesCommonRuleSet",
+            "excludedRules": []
+          }
+        },
+        "description": "AWS Core Rule Set (OWASP Top 10)"
+      },
+      
+      {
+        "name": "IPReputationRule",
+        "priority": 8,
+        "action": "BLOCK",
+        "statement": {
+          "managedRuleGroupStatement": {
+            "vendorName": "AWS",
+            "name": "AWSManagedRulesAmazonIpReputationList"
+          }
+        },
+        "description": "Block IPs with bad reputation"
+      }
+    ],
+    
+    "custom_response": {
+      "blocked_response": {
+        "statusCode": 403,
+        "responseHeaders": {
+          "content-type": {
+            "value": "application/json"
+          }
+        },
+        "body": "{\"error\": \"Access denied by security policy\"}"
+      }
+    },
+    
+    "logging_configuration": {
+      "logDestinationConfigs": [
+        "arn:aws:s3:::nrtaxai-waf-logs"
+      ],
+      "redactedFields": [
+        {
+          "singleHeader": {
+            "name": "authorization"
+          }
+        },
+        {
+          "singleHeader": {
+            "name": "cookie"
+          }
+        }
+      ]
+    },
+    
+    "cloudwatch_metrics": {
+      "enabled": true,
+      "metricName": "NRTaxAI-WAF-Metrics",
+      "alarms": [
+        {
+          "name": "HighBlockedRequestRate",
+          "threshold": 100,
+          "period": 300,
+          "evaluationPeriods": 2,
+          "description": "Alert when blocked requests exceed 100 in 5 minutes"
+        },
+        {
+          "name": "SQLInjectionAttempts",
+          "threshold": 10,
+          "period": 300,
+          "evaluationPeriods": 1,
+          "description": "Alert on SQL injection attempts"
+        }
+      ]
+    }
+  },
+  
+  "backup_strategy": {
+    "database": {
+      "automated_backups": {
+        "enabled": true,
+        "retention_period_days": 30,
+        "backup_window": "03:00-04:00",
+        "maintenance_window": "sun:04:00-sun:05:00"
+      },
+      "manual_snapshots": {
+        "before_deployment": true,
+        "before_migration": true,
+        "retention_days": 90
+      },
+      "point_in_time_recovery": {
+        "enabled": true,
+        "retention_days": 7
+      }
+    },
+    
+    "s3_files": {
+      "versioning": {
+        "enabled": true,
+        "mfa_delete": true
+      },
+      "lifecycle_policies": {
+        "uploads": {
+          "transition_to_glacier": 90,
+          "expiration_days": 2555
+        },
+        "pdfs": {
+          "transition_to_glacier": 180,
+          "expiration_days": 2555
+        },
+        "extracts": {
+          "transition_to_glacier": 30,
+          "expiration_days": 365
+        }
+      },
+      "cross_region_replication": {
+        "enabled": true,
+        "destination_bucket": "nrtaxai-backups-us-west-2",
+        "destination_region": "us-west-2"
+      }
+    },
+    
+    "disaster_recovery": {
+      "rto": "4 hours",
+      "rpo": "1 hour",
+      "recovery_steps": [
+        "1. Restore RDS from latest snapshot",
+        "2. Update DNS to point to DR region",
+        "3. Verify S3 replication status",
+        "4. Test application endpoints",
+        "5. Notify users of service restoration"
+      ]
+    }
+  }
+}

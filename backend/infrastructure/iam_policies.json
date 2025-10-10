@@ -1,0 +1,211 @@
+{
+  "policies": {
+    "backend_api_policy": {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "S3BucketAccess",
+          "Effect": "Allow",
+          "Action": [
+            "s3:GetObject",
+            "s3:PutObject",
+            "s3:DeleteObject",
+            "s3:ListBucket"
+          ],
+          "Resource": [
+            "arn:aws:s3:::nrtaxai-uploads/*",
+            "arn:aws:s3:::nrtaxai-pdfs/*",
+            "arn:aws:s3:::nrtaxai-extracts/*",
+            "arn:aws:s3:::nrtaxai-uploads",
+            "arn:aws:s3:::nrtaxai-pdfs",
+            "arn:aws:s3:::nrtaxai-extracts"
+          ]
+        },
+        {
+          "Sid": "KMSEncryptionDecryption",
+          "Effect": "Allow",
+          "Action": [
+            "kms:Decrypt",
+            "kms:Encrypt",
+            "kms:GenerateDataKey",
+            "kms:DescribeKey"
+          ],
+          "Resource": "arn:aws:kms:*:*:key/*"
+        },
+        {
+          "Sid": "TextractAccess",
+          "Effect": "Allow",
+          "Action": [
+            "textract:StartDocumentAnalysis",
+            "textract:GetDocumentAnalysis",
+            "textract:StartDocumentTextDetection",
+            "textract:GetDocumentTextDetection"
+          ],
+          "Resource": "*"
+        },
+        {
+          "Sid": "SQSQueueAccess",
+          "Effect": "Allow",
+          "Action": [
+            "sqs:SendMessage",
+            "sqs:ReceiveMessage",
+            "sqs:DeleteMessage",
+            "sqs:GetQueueAttributes"
+          ],
+          "Resource": "arn:aws:sqs:*:*:nrtaxai-*"
+        },
+        {
+          "Sid": "CloudWatchLogs",
+          "Effect": "Allow",
+          "Action": [
+            "logs:CreateLogGroup",
+            "logs:CreateLogStream",
+            "logs:PutLogEvents"
+          ],
+          "Resource": "arn:aws:logs:*:*:log-group:/aws/ecs/nrtaxai-*"
+        }
+      ]
+    },
+    
+    "lambda_av_scanner_policy": {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "S3ReadWrite",
+          "Effect": "Allow",
+          "Action": [
+            "s3:GetObject",
+            "s3:PutObject",
+            "s3:DeleteObject",
+            "s3:CopyObject"
+          ],
+          "Resource": [
+            "arn:aws:s3:::nrtaxai-uploads/*",
+            "arn:aws:s3:::nrtaxai-uploads-quarantine/*"
+          ]
+        },
+        {
+          "Sid": "CloudWatchLogs",
+          "Effect": "Allow",
+          "Action": [
+            "logs:CreateLogGroup",
+            "logs:CreateLogStream",
+            "logs:PutLogEvents"
+          ],
+          "Resource": "arn:aws:logs:*:*:*"
+        }
+      ]
+    },
+    
+    "rds_backup_policy": {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "RDSBackupManagement",
+          "Effect": "Allow",
+          "Action": [
+            "rds:CreateDBSnapshot",
+            "rds:DeleteDBSnapshot",
+            "rds:DescribeDBSnapshots",
+            "rds:CopyDBSnapshot",
+            "rds:RestoreDBInstanceFromDBSnapshot"
+          ],
+          "Resource": "arn:aws:rds:*:*:db:nrtaxai-*"
+        },
+        {
+          "Sid": "S3BackupStorage",
+          "Effect": "Allow",
+          "Action": [
+            "s3:PutObject",
+            "s3:GetObject"
+          ],
+          "Resource": "arn:aws:s3:::nrtaxai-backups/*"
+        }
+      ]
+    },
+    
+    "developer_read_only_policy": {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "ReadOnlyAccess",
+          "Effect": "Allow",
+          "Action": [
+            "s3:GetObject",
+            "s3:ListBucket",
+            "rds:DescribeDBInstances",
+            "logs:GetLogEvents",
+            "logs:DescribeLogStreams",
+            "cloudwatch:GetMetricData"
+          ],
+          "Resource": "*"
+        },
+        {
+          "Sid": "DenyWriteOperations",
+          "Effect": "Deny",
+          "Action": [
+            "s3:PutObject",
+            "s3:DeleteObject",
+            "rds:DeleteDBInstance",
+            "rds:ModifyDBInstance"
+          ],
+          "Resource": "*"
+        }
+      ]
+    },
+    
+    "operator_limited_access_policy": {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "ReviewAccess",
+          "Effect": "Allow",
+          "Action": [
+            "s3:GetObject"
+          ],
+          "Resource": [
+            "arn:aws:s3:::nrtaxai-pdfs/*",
+            "arn:aws:s3:::nrtaxai-extracts/*"
+          ]
+        },
+        {
+          "Sid": "DenyUserData",
+          "Effect": "Deny",
+          "Action": [
+            "s3:*"
+          ],
+          "Resource": "arn:aws:s3:::nrtaxai-uploads/*"
+        }
+      ]
+    }
+  },
+  
+  "security_best_practices": {
+    "principle_of_least_privilege": {
+      "description": "Each service role has minimal permissions needed",
+      "implementation": [
+        "Separate IAM roles for each service (API, Lambda, RDS)",
+        "Explicit resource ARNs instead of wildcards",
+        "Deny statements for sensitive operations",
+        "Time-limited credentials using STS"
+      ]
+    },
+    
+    "defense_in_depth": {
+      "layers": [
+        "WAF for application-layer protection",
+        "VPC security groups for network isolation",
+        "IAM policies for resource access control",
+        "KMS for data encryption",
+        "Database row-level security"
+      ]
+    },
+    
+    "data_classification": {
+      "public": ["tax_year", "status", "form_types"],
+      "internal": ["email", "phone", "address"],
+      "confidential": ["ssn", "itin", "financial_data"],
+      "restricted": ["password_hash", "encryption_keys"]
+    }
+  }
+}
