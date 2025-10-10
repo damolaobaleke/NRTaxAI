@@ -433,7 +433,8 @@ programmatic writers (ReportLab/PyPDF)
 
 6) E‑file integration (direct IRS or partner)
 
-
+## Summary System Flow
+```
 ┌─────────────────────────────────────────────────────────────────┐
 │ 1. USER PREPARES RETURN                                         │
 │    - Uploads documents (W-2, 1099s)                             │
@@ -471,8 +472,12 @@ programmatic writers (ReportLab/PyPDF)
 │    - IRS acknowledgment received                                 │
 │    - Status: "filed"                                             │
 └─────────────────────────────────────────────────────────────────┘
-What Operators See in Dashboard:
+```
+
+### What Operators See in Dashboard:
+
 Review Queue:
+```
 ┌────────────────────────────────────────────────────────────────┐
 │ Tax Return Review Queue                                        │
 ├────────────────────────────────────────────────────────────────┤
@@ -480,8 +485,10 @@ Review Queue:
 │ TR-001       │ John Doe    │ 2024 │ Review  │ CPA Smith       │
 │ TR-002       │ Jane Smith  │ 2024 │ Review  │ Unassigned      │
 └────────────────────────────────────────────────────────────────┘
+```
 
 Individual Return Review Screen:
+```
 ┌────────────────────────────────────────────────────────────────┐
 │ Tax Return TR-001 - John Doe (H1B, India)                     │
 ├────────────────────────────────────────────────────────────────┤
@@ -512,15 +519,18 @@ Individual Return Review Screen:
 │                                                                │
 │ Comments: ____________________________________________         │
 └────────────────────────────────────────────────────────────────┘
+```
 
-Key Points:
-Operators DON'T review Form 8879 - they review the actual tax returns (1040-NR, etc.)
-Form 8879 is for authorization - it's generated AFTER operator approval
-Dual signature required: User signs 8879, then operator signs as preparer
-PTIN required: Operators must have valid PTIN to sign returns
-Audit trail: Every review action is logged with operator ID, timestamp, and comments
+### Key Points:
+1. Operators DON'T review Form 8879 - they review the actual tax returns (1040-NR, etc.)
+2. Form 8879 is for authorization - it's generated AFTER operator approval
+3. Dual signature required: User signs 8879, then operator signs as preparer
+3. PTIN required: Operators must have valid PTIN to sign returns
+5. Audit trail: Every review action is logged with operator ID, timestamp, and comments
 
-Database Flow: (Operator (HITL))
+### Database Flow: (Operator (HITL))
+
+```sql
 -- Return submitted for review
 UPDATE tax_returns SET status = 'review' WHERE id = :return_id;
 
@@ -542,3 +552,4 @@ UPDATE authorizations SET status = 'signed', signature_data = :operator_sig WHER
 
 -- Submit to IRS
 UPDATE tax_returns SET status = 'filed' WHERE id = :return_id;
+```
