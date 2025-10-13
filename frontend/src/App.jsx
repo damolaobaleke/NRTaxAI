@@ -11,6 +11,7 @@ import Dashboard from './pages/Dashboard';
 import TaxReturnPage from './pages/TaxReturnPage';
 import ChatPage from './pages/ChatPage';
 import ProfilePage from './pages/ProfilePage';
+import TaxFormsGuide from './pages/TaxFormsGuide';
 import './App.css';
 
 // Create Material UI theme
@@ -94,6 +95,9 @@ function App() {
                     </PublicRoute>
                   } 
                 />
+                
+                {/* Public knowledge base - accessible to all */}
+                <Route path="/forms-guide" element={<TaxFormsGuide />} />
                 
                 {/* Protected routes */}
                 <Route 

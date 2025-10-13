@@ -71,11 +71,13 @@ class DocumentType(str, Enum):
     W2 = "W2"
     FORM_1099_INT = "1099INT"
     FORM_1099_NEC = "1099NEC"
+    FORM_1099_DIV = "1099DIV"
+    FORM_1099_G = "1099G"
+    FORM_1099_MISC = "1099MISC"
+    FORM_1099_B = "1099B"
+    FORM_1099_R = "1099R"
     FORM_1098_T = "1098T"
     FORM_1042_S = "1042S"
-    FORM_1099_DIV = "1099DIV"
-    FORM_1099_B = "1099B"
-    FORM_1099_MISC = "1099MISC"
 
 
 class VisaClass(str, Enum):
