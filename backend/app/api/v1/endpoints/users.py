@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from typing import Optional
 
 from app.core.database import get_database
-from app.services.auth import get_current_user, get_current_active_user
+from app.services.auth_service import get_current_user, get_current_active_user
 from app.models.user import (
     User, UserInDB, UserProfile, UserProfileCreate, UserProfileUpdate, 
     UserProfileWithITIN, UserUpdate
@@ -106,7 +106,10 @@ async def get_current_user_profile(
     
     # TODO: Decrypt ITIN using KMS service
     # For now, return as-is (will be encrypted in production)
-    decrypted_itin = profile["itin"]
+    if profile["itin"]:
+        decrypted_itin = profile["itin"]
+    else:
+        decrypted_itin = None
     
     return UserProfileWithITIN(
         user_id=profile["user_id"],
@@ -144,7 +147,7 @@ async def create_user_profile(
             detail="Profile already exists"
         )
     
-    # TODO: Encrypt ITIN using KMS service
+    # TODO: Encrypt ITIN using KMS service if it exists
     # For now, store as-is (will be encrypted in production)
     encrypted_itin = profile_data.itin
     
@@ -186,6 +189,7 @@ async def update_user_profile(
 ):
     """Update user profile"""
     
+    print(profile_data.model_dump())
     # Build update query dynamically
     update_fields = ["updated_at = CURRENT_TIMESTAMP"]
     update_values = {"user_id": current_user.id}

@@ -29,6 +29,8 @@ class UserInDB(UserBase):
     id: UUID
     password_hash: str
     mfa_enabled: bool
+    is_active: bool = True
+    email_verified: bool = False
     created_at: datetime
     
     class Config:
@@ -39,6 +41,8 @@ class User(UserBase):
     """User response model"""
     id: UUID
     mfa_enabled: bool
+    is_active: bool
+    email_verified: bool
     created_at: datetime
     
     class Config:
@@ -88,6 +92,8 @@ class UserProfile(UserProfileBase):
         from_attributes = True
 
 
+# UserProfileWithITIN is used to return the user profile 
+# with the decrypted ITIN for the API response. 
 class UserProfileWithITIN(UserProfile):
     """User profile with decrypted ITIN"""
     itin: Optional[str] = None

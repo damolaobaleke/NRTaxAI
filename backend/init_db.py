@@ -4,7 +4,7 @@ Creates all tables and indexes for NRTaxAI
 """
 
 import asyncio
-import databases
+import asyncpg
 from app.core.config import settings
 
 
@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS users (
     email VARCHAR(255) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     mfa_enabled BOOLEAN DEFAULT FALSE,
+    is_active BOOLEAN DEFAULT TRUE,
+    email_verified BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -208,20 +210,26 @@ CREATE INDEX IF NOT EXISTS idx_feature_flags_key ON feature_flags(key);
 
 async def init_database():
     """Initialize database with tables and indexes"""
-    db = databases.Database(settings.DATABASE_URL)
+    # Parse DATABASE_URL for asyncpg connection
+    # Convert from: postgresql://user:pass@host:port/db
+    # to asyncpg format
+    db_url = str(settings.DATABASE_URL)
+    print(db_url)
+    conn = None
     
     try:
-        await db.connect()
+        # Connect to database using asyncpg
+        conn = await asyncpg.connect(db_url)
         print("Connected to database")
         
         # Create tables
         print("Creating tables...")
-        await db.execute(CREATE_TABLES)
+        await conn.execute(CREATE_TABLES)
         print("Tables created successfully")
         
         # Create indexes
         print("Creating indexes...")
-        await db.execute(CREATE_INDEXES)
+        await conn.execute(CREATE_INDEXES)
         print("Indexes created successfully")
         
         print("Database initialization completed!")
@@ -230,7 +238,8 @@ async def init_database():
         print(f"Error initializing database: {e}")
         raise
     finally:
-        await db.disconnect()
+        if conn:
+            await conn.close()
 
 
 if __name__ == "__main__":

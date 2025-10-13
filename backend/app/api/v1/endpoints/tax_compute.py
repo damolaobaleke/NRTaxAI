@@ -8,7 +8,7 @@ from uuid import UUID
 from datetime import datetime, date
 
 from app.core.database import get_database
-from app.services.auth import get_current_user
+from app.services.auth_service import get_current_user
 from app.services.tax_rules_engine import get_tax_rules_engine
 from app.models.user import UserInDB
 

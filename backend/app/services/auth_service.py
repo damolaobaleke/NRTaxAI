@@ -2,7 +2,7 @@
 Authentication Service
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -36,9 +36,9 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     """Create JWT access token"""
     to_encode = data.copy()
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.now(timezone.utc) + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     
     to_encode.update({"exp": expire, "type": "access"})
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
@@ -48,7 +48,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
 def create_refresh_token(data: dict):
     """Create JWT refresh token"""
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    expire = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
     to_encode.update({"exp": expire, "type": "refresh"})
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
@@ -64,7 +64,7 @@ def verify_token(token: str, token_type: str = "access") -> TokenData:
     
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        user_id: str = payload.get("sub")
+        user_id: str = payload.get("sub") # sub is the subject of the token, which is the user_id
         email: str = payload.get("email")
         token_type_claim: str = payload.get("type")
         
@@ -87,7 +87,7 @@ async def get_current_user(
     
     user = await db.fetch_one(
         """
-        SELECT id, email, password_hash, mfa_enabled, created_at
+        SELECT id, email, password_hash, mfa_enabled, is_active, email_verified, created_at
         FROM users 
         WHERE id = :user_id
         """,
@@ -105,7 +105,22 @@ async def get_current_user(
 
 
 async def get_current_active_user(current_user: UserInDB = Depends(get_current_user)) -> UserInDB:
-    """Get current active user (placeholder for future user status checks)"""
+    """Get current active user with status checks"""
+    
+    # Check if account is disabled/banned
+    if not current_user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is disabled. Please contact support."
+        )
+    
+    # Optional: Check if email is verified (uncomment to enforce)
+    # if not current_user.email_verified:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_403_FORBIDDEN,
+    #         detail="Email not verified. Please verify your email to continue."
+    #     )
+    
     return current_user
 
 
@@ -119,7 +134,7 @@ class AuthService:
         """Authenticate user with email and password"""
         user = await self.db.fetch_one(
             """
-            SELECT id, email, password_hash, mfa_enabled, created_at
+            SELECT id, email, password_hash, mfa_enabled, is_active, email_verified, created_at
             FROM users 
             WHERE email = :email
             """,
@@ -138,11 +153,11 @@ class AuthService:
         """Create new user"""
         password_hash = get_password_hash(password)
         
-        user_id = await self.db.fetch_one(
+        user = await self.db.fetch_one(
             """
-            INSERT INTO users (email, password_hash, mfa_enabled)
-            VALUES (:email, :password_hash, :mfa_enabled)
-            RETURNING id, email, password_hash, mfa_enabled, created_at
+            INSERT INTO users (email, password_hash, mfa_enabled, is_active, email_verified)
+            VALUES (:email, :password_hash, :mfa_enabled, TRUE, FALSE)
+            RETURNING id, email, password_hash, mfa_enabled, is_active, email_verified, created_at
             """,
             {
                 "email": email,
@@ -151,7 +166,7 @@ class AuthService:
             }
         )
         
-        return UserInDB(**user_id)
+        return UserInDB(**user)
     
     async def user_exists(self, email: str) -> bool:
         """Check if user exists"""

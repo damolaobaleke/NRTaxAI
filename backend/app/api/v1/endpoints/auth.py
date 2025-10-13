@@ -8,18 +8,20 @@ from fastapi.security import HTTPBearer
 
 from app.core.config import settings
 from app.core.database import get_database
-from app.services.auth import AuthService, create_access_token, create_refresh_token, verify_token, get_current_user
+from app.services.auth_service import AuthService, create_access_token, create_refresh_token, verify_token, get_current_user
 from app.models.user import UserCreate, Token, UserInDB
 
 router = APIRouter()
 security = HTTPBearer()
 
+# FastAPI automatically: automatic request body parsing with Pydantic
+# Reads the JSON body (like req.body in Express)
+# Validates it against the UserCreate Pydantic model
+# Converts it to a Python object
+# Injects it as user_data
 
 @router.post("/register", response_model=Token)
-async def register(
-    user_data: UserCreate,
-    db = Depends(get_database)
-):
+async def register(user_data: UserCreate, db = Depends(get_database)):
     """Register a new user"""
     auth_service = AuthService(db)
     
@@ -31,6 +33,7 @@ async def register(
         )
     
     # Create user
+    print(user_data.model_dump())
     user = await auth_service.create_user(
         email=user_data.email,
         password=user_data.password,

@@ -7,7 +7,7 @@ from typing import List, Optional
 from uuid import UUID
 
 from app.core.database import get_database
-from app.services.auth import get_current_active_user
+from app.services.auth_service import get_current_active_user
 from app.models.user import UserInDB
 from app.models.tax_return import (
     TaxReturn, TaxReturnCreate, TaxReturnUpdate, TaxReturnSummary,

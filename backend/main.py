@@ -77,7 +77,7 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """Detailed health check"""
+    """Detailed health check endpoint"""
     try:
         # Test database connection
         db = await get_database()
@@ -96,6 +96,7 @@ async def health_check():
         )
 
 if __name__ == "__main__":
+    """Run the application if the main.py file is called directly"""
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
