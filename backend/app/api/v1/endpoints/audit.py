@@ -8,9 +8,10 @@ from uuid import UUID
 from datetime import datetime
 
 from app.core.database import get_database
-from app.services.auth import get_current_user
+from app.services.auth_service import get_current_user
 from app.services.audit_service import get_audit_service
 from app.models.user import UserInDB
+from sqlalchemy import text
 
 router = APIRouter()
 
@@ -27,13 +28,14 @@ async def get_return_audit_logs(
     
     try:
         # Verify return ownership
-        tax_return = await db.fetch_one(
-            """
+        result = await db.execute(
+        text("""
             SELECT * FROM tax_returns 
             WHERE id = :return_id AND user_id = :user_id
-            """,
-            {"return_id": str(return_id), "user_id": str(current_user.id)}
+            """),
+        {"return_id": str(return_id), "user_id": str(current_user.id)}
         )
+        tax_return = result.fetchone()
         
         if not tax_return:
             raise HTTPException(
@@ -70,13 +72,14 @@ async def verify_audit_chain(
     
     try:
         # Verify return ownership
-        tax_return = await db.fetch_one(
-            """
+        result = await db.execute(
+        text("""
             SELECT * FROM tax_returns 
             WHERE id = :return_id AND user_id = :user_id
-            """,
+            """),
             {"return_id": str(return_id), "user_id": str(current_user.id)}
         )
+        tax_return = result.fetchone()
         
         if not tax_return:
             raise HTTPException(
@@ -110,13 +113,14 @@ async def export_audit_trail(
     
     try:
         # Verify return ownership (or operator access)
-        tax_return = await db.fetch_one(
-            """
-            SELECT * FROM tax_returns 
-            WHERE id = :return_id AND user_id = :user_id
-            """,
+        result = await db.execute(
+            text("""
+                SELECT * FROM tax_returns 
+                WHERE id = :return_id AND user_id = :user_id
+                """),
             {"return_id": str(return_id), "user_id": str(current_user.id)}
         )
+        tax_return = result.fetchone()
         
         if not tax_return:
             raise HTTPException(
@@ -157,13 +161,14 @@ async def create_audit_bundle(
     
     try:
         # Verify return ownership (or operator access)
-        tax_return = await db.fetch_one(
-            """
+        result = await db.execute(
+        text("""
             SELECT * FROM tax_returns 
             WHERE id = :return_id AND user_id = :user_id
-            """,
-            {"return_id": str(return_id), "user_id": str(current_user.id)}
+            """),
+        {"return_id": str(return_id), "user_id": str(current_user.id)}
         )
+        tax_return = result.fetchone()
         
         if not tax_return:
             raise HTTPException(

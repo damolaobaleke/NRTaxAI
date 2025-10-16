@@ -14,6 +14,7 @@ import structlog
 from app.core.database import get_database
 from app.services.s3_service import s3_service
 from app.core.config import settings
+from sqlalchemy import text
 
 logger = structlog.get_logger()
 

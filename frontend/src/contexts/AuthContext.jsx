@@ -53,7 +53,8 @@ export const AuthProvider = ({ children }) => {
       
       return { success: true };
     } catch (error) {
-      return { success: false, error: error.message };
+      const errorMessage = error.response?.data?.detail || error.message || 'Login failed';
+      return { success: false, error: errorMessage };
     }
   };
 
@@ -61,6 +62,7 @@ export const AuthProvider = ({ children }) => {
     try {
       const response = await authService.register(email, password, mfaEnabled);
       const { access_token, refresh_token } = response;
+      console.log('Register response:', response);
       
       localStorage.setItem('accessToken', access_token);
       localStorage.setItem('refreshToken', refresh_token);
@@ -72,7 +74,8 @@ export const AuthProvider = ({ children }) => {
       
       return { success: true };
     } catch (error) {
-      return { success: false, error: error.message };
+      const errorMessage = error.response?.data?.detail || error.message || 'Registration failed';
+      return { success: false, error: errorMessage };
     }
   };
 

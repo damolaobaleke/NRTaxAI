@@ -63,20 +63,32 @@ apiClient.interceptors.response.use(
 export const authService = {
   // Authentication
   async login(email, password) {
-    const response = await axios.post(`${API_BASE_URL}/auth/login`, {
-      email,
-      password
-    });
-    return response.data;
+    try {
+      const response = await axios.post(`${API_BASE_URL}/auth/login`, {
+        email,
+        password
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Login error:', error.response?.data || error.message);
+      throw error;
+    }
   },
 
   async register(email, password, mfaEnabled = false) {
-    const response = await axios.post(`${API_BASE_URL}/auth/register`, {
-      email,
-      password,
-      mfa_enabled: mfaEnabled
-    });
-    return response.data;
+    try {
+      const response = await axios.post(`${API_BASE_URL}/auth/register`, {
+        email,
+        password,
+        mfa_enabled: mfaEnabled
+      });
+      // console.log('Register response:', response.data);
+      return response.data;
+    } catch (error) {
+      // Its an exception that is thrown by the backend, so info will be in error object
+      console.error('Register error:', error.response?.data || error.message);
+      throw error;
+    }
   },
 
   async refreshToken(refreshToken) {
@@ -186,10 +198,10 @@ export const documentService = {
     return response.data;
   },
 
-  async getDocuments(returnId = null, status = null) {
+  async getDocuments(returnId = null, docStatus = null) {
     const params = new URLSearchParams();
     if (returnId) params.append('return_id', returnId);
-    if (status) params.append('status', status);
+    if (docStatus) params.append('doc_status', docStatus);
     
     const response = await apiClient.get(`/documents/?${params.toString()}`);
     return response.data;

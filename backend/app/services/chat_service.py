@@ -4,14 +4,17 @@ OpenAI Chat Service with Tool Calling
 
 import json
 import openai
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 import structlog
+from sqlalchemy import text
 
 from app.core.config import settings
 from app.services.tax_rules_engine import get_tax_rules_engine
-from app.services.extraction_pipeline import ExtractionPipeline
+from app.services.document_extraction_pipeline import ExtractionPipeline
+from app.services.document_aggregation_service import document_aggregation_service
 from app.core.database import get_database
+from sqlalchemy import text
 
 logger = structlog.get_logger()
 
@@ -278,7 +281,7 @@ Remember: Tax preparation requires accuracy. Always use the tools to get exact c
             # Store user message
             await self._store_message(session_id, "user", message)
             
-            # Call OpenAI with tools
+            # ================================ Call OpenAI with tools ================================
             response = await self._call_openai_with_tools(
                 messages=messages,
                 user_id=user_id,
@@ -297,7 +300,7 @@ Remember: Tax preparation requires accuracy. Always use the tools to get exact c
                 "session_id": session_id,
                 "message": response["content"],
                 "tool_calls": response.get("tool_calls", []),
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
             
         except Exception as e:
@@ -312,7 +315,7 @@ Remember: Tax preparation requires accuracy. Always use the tools to get exact c
     ) -> Dict[str, Any]:
         """Call OpenAI API with tool support"""
         try:
-            # Initial API call
+            # ================================ Initial API call ================================
             response = openai.chat.completions.create(
                 model=self.model,
                 messages=messages,
@@ -456,23 +459,30 @@ Remember: Tax preparation requires accuracy. Always use the tools to get exact c
     ) -> Dict[str, Any]:
         """Get document status for a tax return"""
         try:
-            documents = await self.db.fetch_all(
-                """
+            documents = await self.db.execute(
+                text("""
                 SELECT id, doc_type, status, created_at 
                 FROM documents 
                 WHERE return_id = :return_id AND user_id = :user_id
                 ORDER BY created_at DESC
-                """,
+                """),
                 {"return_id": return_id, "user_id": user_id}
-            )
+            ).fetchall()
             
             doc_list = []
             for doc in documents:
+                if hasattr(doc, '_asdict'):
+                    doc_dict = doc._asdict()
+                else:
+                    # Fallback for tuples
+                    field_names = ['id', 'doc_type', 'status', 'created_at']
+                    doc_dict = dict(zip(field_names, doc))
+                
                 doc_list.append({
-                    "id": str(doc["id"]),
-                    "type": doc["doc_type"],
-                    "status": doc["status"],
-                    "uploaded_at": doc["created_at"].isoformat() if doc["created_at"] else None
+                    "id": str(doc_dict["id"]),
+                    "type": doc_dict["doc_type"],
+                    "status": doc_dict["status"],
+                    "uploaded_at": doc_dict["created_at"].isoformat() if doc_dict["created_at"] else None
                 })
             
             return {
@@ -514,20 +524,25 @@ Remember: Tax preparation requires accuracy. Always use the tools to get exact c
                 return {"error": "User profile not found"}
             
             # Get documents
-            documents = await self.db.fetch_all(
-                """
+            documents = await self.db.execute(
+                text("""
                 SELECT * FROM documents 
                 WHERE return_id = :return_id AND status = 'extracted'
-                """,
+                """),
                 {"return_id": return_id}
-            )
+            ).fetchall()
             
             if not documents:
                 return {"error": "No extracted documents found. Please upload and extract documents first."}
             
-            # Aggregate income and withholding data
-            income_data = await self._aggregate_income_from_documents(documents)
-            withholding_data = await self._aggregate_withholding_from_documents(documents)
+            # Aggregate income and withholding data using shared service
+            income_data = await document_aggregation_service.aggregate_income_from_documents(documents)
+            withholding_data = await document_aggregation_service.aggregate_withholding_from_documents(
+                documents,
+                visa_type=user_profile.get("visa_class"),
+                entry_date=user_data.get("entry_date"),
+                tax_year=tax_return["tax_year"]
+            )
             
             # Prepare user data
             user_data = {
@@ -649,7 +664,7 @@ Remember: Tax preparation requires accuracy. Always use the tools to get exact c
             entry_date = args.get("entry_date")
             tax_year = args.get("tax_year")
             
-            is_exempt = self._check_fica_exemption(visa_type, entry_date, tax_year)
+            is_exempt = document_aggregation_service.check_fica_exemption(visa_type, entry_date, tax_year)
             
             # Calculate years in US
             from datetime import datetime
@@ -752,23 +767,30 @@ Remember: Tax preparation requires accuracy. Always use the tools to get exact c
             Exception: If there is an error getting the chat history
         """
         try:
-            messages = await self.db.fetch_all(
-                """
+            messages = await self.db.execute(
+                text("""
                 SELECT role, content, tool_calls_json, created_at 
                 FROM chat_messages 
                 WHERE session_id = :session_id
                 ORDER BY created_at ASC
                 LIMIT 50
-                """,
+                """),
                 {"session_id": session_id}
-            )
+            ).fetchall()
             
             history = []
             for msg in messages:
+                if hasattr(msg, '_asdict'):
+                    msg_dict = msg._asdict()
+                else:
+                    # Fallback for tuples
+                    field_names = ['role', 'content', 'tool_calls_json', 'created_at']
+                    msg_dict = dict(zip(field_names, msg))
+                
                 history.append({
-                    "role": msg["role"],
-                    "content": msg["content"],
-                    "tool_calls": json.loads(msg["tool_calls_json"]) if msg.get("tool_calls_json") else None
+                    "role": msg_dict["role"],
+                    "content": msg_dict["content"],
+                    "tool_calls": json.loads(msg_dict["tool_calls_json"]) if msg_dict.get("tool_calls_json") else None
                 })
             
             return history
@@ -794,10 +816,10 @@ Remember: Tax preparation requires accuracy. Always use the tools to get exact c
         """
         try:
             await self.db.execute(
-                """
+                text("""
                 INSERT INTO chat_messages (session_id, role, content, tool_calls_json)
                 VALUES (:session_id, :role, :content, :tool_calls)
-                """,
+                """),
                 {
                     "session_id": session_id,
                     "role": role,
@@ -808,251 +830,3 @@ Remember: Tax preparation requires accuracy. Always use the tools to get exact c
             
         except Exception as e:
             logger.error("Failed to store message", error=str(e))
-    
-    async def _aggregate_income_from_documents(self, documents: list) -> Dict[str, Any]:
-        """Aggregate income from extracted documents"""
-        income_data = {
-            "wages": 0,
-            "interest": 0,
-            "dividends": 0,
-            "qualified_dividends": 0,
-            "capital_gains": 0,
-            "self_employment": 0,
-            "unemployment": 0,
-            "state_refunds": 0,
-            "rents": 0,
-            "royalties": 0,
-            "other_income": 0,
-            "retirement_distributions": 0,
-            "retirement_taxable": 0,
-            "scholarships_grants": 0,
-            "tuition_paid": 0,
-            "foreign_income": 0,
-            "us_work_days": 0,
-            "total_work_days": 0
-        }
-        
-        for doc in documents:
-            if not doc.get("extracted_json"):
-                continue
-            
-            print(f"Processing document: {doc['doc_type']}")
-            
-            try:
-                extracted_data = json.loads(doc["extracted_json"])
-                print(f"Extracted data: {extracted_data}")
-                fields = extracted_data.get("extracted_fields", {})
-                
-                # W-2: Wage income
-                if doc["doc_type"] == "W2":
-                    wages = fields.get("wages", {}).get("value")
-                    if wages:
-                        income_data["wages"] += float(wages.replace(",", "").replace("$", ""))
-                
-                # 1099-INT: Interest income
-                elif doc["doc_type"] == "1099INT":
-                    interest = fields.get("interest_income", {}).get("value")
-                    if interest:
-                        income_data["interest"] += float(interest.replace(",", "").replace("$", ""))
-                
-                # 1099-NEC: Non-employee compensation
-                elif doc["doc_type"] == "1099NEC":
-                    comp = fields.get("nonemployee_compensation", {}).get("value")
-                    if comp:
-                        income_data["self_employment"] += float(comp.replace(",", "").replace("$", ""))
-                
-                # 1099-DIV: Dividends and capital gains
-                elif doc["doc_type"] == "1099DIV":
-                    ordinary_div = fields.get("total_ordinary_dividends", {}).get("value")
-                    if ordinary_div:
-                        income_data["dividends"] += float(ordinary_div.replace(",", "").replace("$", ""))
-                    
-                    qualified_div = fields.get("qualified_dividends", {}).get("value")
-                    if qualified_div:
-                        # Converts the qualified dividends to decimal value and replaces the $ sign with an empty string
-                        income_data["qualified_dividends"] += float(qualified_div.replace(",", "").replace("$", ""))
-                    
-                    cap_gains = fields.get("total_capital_gain_distributions", {}).get("value")
-                    if cap_gains:
-                        income_data["capital_gains"] += float(cap_gains.replace(",", "").replace("$", ""))
-                
-                # 1099-G: Government payments
-                elif doc["doc_type"] == "1099G":
-                    unemployment = fields.get("unemployment_compensation", {}).get("value")
-                    if unemployment:
-                        income_data["unemployment"] += float(unemployment.replace(",", "").replace("$", ""))
-                    
-                    state_refund = fields.get("state_tax_refund", {}).get("value")
-                    if state_refund:
-                        income_data["state_refunds"] += float(state_refund.replace(",", "").replace("$", ""))
-                
-                # 1099-MISC: Miscellaneous income
-                elif doc["doc_type"] == "1099MISC":
-                    rents = fields.get("rents", {}).get("value")
-                    if rents:
-                        income_data["rents"] += float(rents.replace(",", "").replace("$", ""))
-                    
-                    royalties = fields.get("royalties", {}).get("value")
-                    if royalties:
-                        income_data["royalties"] += float(royalties.replace(",", "").replace("$", ""))
-                    
-                    other = fields.get("other_income", {}).get("value")
-                    if other:
-                        income_data["other_income"] += float(other.replace(",", "").replace("$", ""))
-                
-                # 1099-B: Broker transactions (capital gains/losses)
-                elif doc["doc_type"] == "1099B":
-                    gain_loss = fields.get("gain_or_loss", {}).get("value")
-                    if gain_loss:
-                        income_data["capital_gains"] += float(gain_loss.replace(",", "").replace("$", "").replace("-", ""))
-                
-                # 1099-R: Retirement distributions
-                elif doc["doc_type"] == "1099R":
-                    gross = fields.get("gross_distribution", {}).get("value")
-                    if gross:
-                        income_data["retirement_distributions"] += float(gross.replace(",", "").replace("$", ""))
-                    
-                    taxable = fields.get("taxable_amount", {}).get("value")
-                    if taxable:
-                        income_data["retirement_taxable"] += float(taxable.replace(",", "").replace("$", ""))
-                
-                # 1098-T: Tuition (for education credits)
-                elif doc["doc_type"] == "1098T":
-                    tuition = fields.get("qualified_tuition_expenses", {}).get("value")
-                    if tuition:
-                        income_data["tuition_paid"] += float(tuition.replace(",", "").replace("$", ""))
-                    
-                    scholarships = fields.get("scholarships_grants", {}).get("value")
-                    if scholarships:
-                        income_data["scholarships_grants"] += float(scholarships.replace(",", "").replace("$", ""))
-                
-                # 1042-S: Foreign person's U.S. income
-                elif doc["doc_type"] == "1042S":
-                    gross_income = fields.get("gross_income", {}).get("value")
-                    if gross_income:
-                        income_data["foreign_income"] += float(gross_income.replace(",", "").replace("$", ""))
-                
-            except (json.JSONDecodeError, ValueError, KeyError, AttributeError) as e:
-                logger.warning(f"Failed to process document {doc.get('id')}: {str(e)}")
-                continue
-        
-        return income_data
-    
-    def _check_fica_exemption(self, visa_type: str, entry_date: str, tax_year: int) -> bool:
-        """
-        Check if student is exempt from FICA (Social Security + Medicare) taxes
-        
-        Per IRS: https://www.irs.gov/individuals/international-taxpayers/foreign-student-liability-for-social-security-and-medicare-taxes
-        F-1, J-1, M-1, Q-1, Q-2 students are EXEMPT from FICA for first 5 calendar years in USA
-        
-        Args:
-            visa_type: Visa classification (F-1, J-1, M-1, Q-1, Q-2, etc.)
-            entry_date: First entry date to US (YYYY-MM-DD)
-            tax_year: Tax year being filed
-            
-        Returns:
-            True if FICA exempt, False if FICA applies
-        """
-        # Student visa types eligible for FICA exemption
-        exempt_visas = ['F-1', 'F1', 'J-1', 'J1', 'M-1', 'M1', 'Q-1', 'Q1', 'Q-2', 'Q2']
-        
-        if visa_type not in exempt_visas:
-            return False  # Not a student visa, FICA applies
-        
-        try:
-            from datetime import datetime
-            entry = datetime.strptime(entry_date, '%Y-%m-%d')
-            entry_year = entry.year
-            
-            # Calculate years in US (5 calendar year rule)
-            years_in_us = tax_year - entry_year + 1
-            
-            # Exempt if 5 or fewer calendar years
-            return years_in_us <= 5
-            
-        except (ValueError, AttributeError):
-            # If we can't determine, assume FICA applies (safer)
-            return False
-    
-    async def _aggregate_withholding_from_documents(self, documents: list, visa_type: str = None, entry_date: str = None, tax_year: int = None) -> Dict[str, Any]:
-        """
-        Aggregate withholding from extracted documents
-        
-        Checks for FICA exemption per:
-        https://www.irs.gov/individuals/international-taxpayers/foreign-student-liability-for-social-security-and-medicare-taxes
-        """
-        withholding_data = {
-            "federal_income_tax": 0,
-            "social_security_tax": 0,
-            "medicare_tax": 0,
-            "state_income_tax": 0,
-            "foreign_tax": 0,
-            "fica_exempt": False,
-            "incorrect_fica_withheld": 0,  # Amount that can be refunded
-            "fica_refund_eligible": False
-        }
-        
-        # Check if student is FICA exempt
-        if visa_type and entry_date and tax_year:
-            withholding_data["fica_exempt"] = self._check_fica_exemption(visa_type, entry_date, tax_year)
-        
-        for doc in documents:
-            if not doc.get("extracted_json"):
-                continue
-            
-            try:
-                extracted_data = json.loads(doc["extracted_json"])
-                fields = extracted_data.get("extracted_fields", {})
-                
-                # Federal income tax (all forms) FICA (Federal Insurance Contributions Act) tax withheld
-                federal_tax = fields.get("federal_income_tax_withheld", {}).get("value")
-                if not federal_tax:
-                    federal_tax = fields.get("federal_tax_withheld", {}).get("value")  # 1042-S variation
-                if federal_tax:
-                    withholding_data["federal_income_tax"] += float(federal_tax.replace(",", "").replace("$", ""))
-                
-                # Social Security tax (W-2 only) - Check for FICA exemption
-                ss_tax = fields.get("social_security_tax_withheld", {}).get("value")
-                if ss_tax:
-                    ss_amount = float(ss_tax.replace(",", "").replace("$", ""))
-                    withholding_data["social_security_tax"] += ss_amount
-                    
-                    # If FICA exempt but SS tax was withheld, it's incorrect!
-                    if withholding_data["fica_exempt"]:
-                        withholding_data["incorrect_fica_withheld"] += ss_amount
-                
-                # Medicare tax (W-2 only) - Check for FICA exemption
-                medicare_tax = fields.get("medicare_tax_withheld", {}).get("value")
-                if medicare_tax:
-                    medicare_amount = float(medicare_tax.replace(",", "").replace("$", ""))
-                    withholding_data["medicare_tax"] += medicare_amount
-                    
-                    # If FICA exempt but Medicare tax was withheld, it's incorrect!
-                    if withholding_data["fica_exempt"]:
-                        withholding_data["incorrect_fica_withheld"] += medicare_amount
-                
-                # State income tax (1099-G mainly)
-                state_tax = fields.get("state_income_tax_withheld", {}).get("value")
-                if state_tax:
-                    withholding_data["state_income_tax"] += float(state_tax.replace(",", "").replace("$", ""))
-                
-                # Foreign tax paid (1099-DIV)
-                foreign_tax = fields.get("foreign_tax_paid", {}).get("value")
-                if foreign_tax:
-                    withholding_data["foreign_tax"] += float(foreign_tax.replace(",", "").replace("$", ""))
-                
-            except (json.JSONDecodeError, ValueError, KeyError, AttributeError) as e:
-                logger.warning(f"Failed to process withholding from document {doc.get('id')}: {str(e)}")
-                continue
-        
-        # Flag if student can claim FICA refund
-        if withholding_data["incorrect_fica_withheld"] > 0:
-            withholding_data["fica_refund_eligible"] = True
-        
-        return withholding_data
-
-
-async def get_chat_service():
-    """Get chat service instance"""
-    db = await get_database()
-    return ChatService(db)

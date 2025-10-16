@@ -19,6 +19,12 @@ class UserCreate(UserBase):
     mfa_enabled: bool = False
 
 
+class UserLogin(BaseModel):
+    """User login model"""
+    email: EmailStr
+    password: str = Field(..., min_length=1)
+
+
 class UserUpdate(BaseModel):
     """User update model"""
     mfa_enabled: Optional[bool] = None

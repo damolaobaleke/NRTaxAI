@@ -10,13 +10,21 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from fastapi import HTTPException, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from sqlalchemy import text
 
 from app.core.config import settings
 from app.core.database import get_database
 from app.models.user import TokenData, UserInDB
 
 # Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Use pbkdf2_sha256 as primary scheme, with bcrypt as fallback
+pwd_context = CryptContext(
+    schemes=["pbkdf2_sha256", "bcrypt"],
+    deprecated="auto",
+    pbkdf2_sha256__default_rounds=600000,
+    pbkdf2_sha256__min_rounds=100000,
+    pbkdf2_sha256__max_rounds=1000000
+)
 
 # JWT security
 security = HTTPBearer()
@@ -29,6 +37,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def get_password_hash(password: str) -> str:
     """Hash a password"""
+    # Using pbkdf2_sha256 which doesn't have the 72-byte limit of bcrypt
     return pwd_context.hash(password)
 
 
@@ -85,14 +94,15 @@ async def get_current_user(
     """Get current authenticated user"""
     token_data = verify_token(credentials.credentials)
     
-    user = await db.fetch_one(
-        """
+    result = await db.execute(
+        text("""
         SELECT id, email, password_hash, mfa_enabled, is_active, email_verified, created_at
         FROM users 
         WHERE id = :user_id
-        """,
+        """),
         {"user_id": token_data.user_id}
     )
+    user = result.fetchone()
     
     if user is None:
         raise HTTPException(
@@ -101,7 +111,7 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    return UserInDB(**user)
+    return UserInDB(**user._asdict())
 
 
 async def get_current_active_user(current_user: UserInDB = Depends(get_current_user)) -> UserInDB:
@@ -132,48 +142,51 @@ class AuthService:
     
     async def authenticate_user(self, email: str, password: str) -> Optional[UserInDB]:
         """Authenticate user with email and password"""
-        user = await self.db.fetch_one(
-            """
+        result = await self.db.execute(
+            text("""
             SELECT id, email, password_hash, mfa_enabled, is_active, email_verified, created_at
             FROM users 
             WHERE email = :email
-            """,
+            """),
             {"email": email}
         )
+        user = result.fetchone()
         
         if not user:
             return None
             
-        if not verify_password(password, user["password_hash"]):
+        if not verify_password(password, user.password_hash):
             return None
             
-        return UserInDB(**user)
+        return UserInDB(**user._asdict())
     
     async def create_user(self, email: str, password: str, mfa_enabled: bool = False) -> UserInDB:
         """Create new user"""
         password_hash = get_password_hash(password)
         
-        user = await self.db.fetch_one(
-            """
+        result = await self.db.execute(
+            text("""
             INSERT INTO users (email, password_hash, mfa_enabled, is_active, email_verified)
             VALUES (:email, :password_hash, :mfa_enabled, TRUE, FALSE)
             RETURNING id, email, password_hash, mfa_enabled, is_active, email_verified, created_at
-            """,
+            """),
             {
                 "email": email,
                 "password_hash": password_hash,
                 "mfa_enabled": mfa_enabled
             }
         )
+        user = result.fetchone()
         
-        return UserInDB(**user)
+        return UserInDB(**user._asdict())
     
     async def user_exists(self, email: str) -> bool:
         """Check if user exists"""
-        user = await self.db.fetch_one(
-            "SELECT id FROM users WHERE email = :email",
+        result = await self.db.execute(
+            text("SELECT id FROM users WHERE email = :email"),
             {"email": email}
         )
+        user = result.fetchone()
         return user is not None
     
     async def update_password(self, user_id: UUID, new_password: str) -> bool:
@@ -181,11 +194,11 @@ class AuthService:
         password_hash = get_password_hash(new_password)
         
         result = await self.db.execute(
-            """
+            text("""
             UPDATE users 
             SET password_hash = :password_hash
             WHERE id = :user_id
-            """,
+            """),
             {
                 "user_id": user_id,
                 "password_hash": password_hash

@@ -13,6 +13,7 @@ from app.services.s3_service import s3_service
 from app.services.av_scanner import av_scanner
 from app.models.tax_return import DocumentCreate, DocumentUpdate
 from app.models.common import DocumentType
+from sqlalchemy import text
 
 logger = structlog.get_logger()
 
@@ -273,7 +274,6 @@ class DocumentService:
         self,
         user_id: str,
         return_id: Optional[str] = None,
-        status: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         List documents for user

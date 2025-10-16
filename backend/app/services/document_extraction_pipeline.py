@@ -13,6 +13,7 @@ from app.services.textract_service import textract_service
 from app.services.textract_normalizer_service import textract_normalizer
 from app.services.tax_validators import tax_validator
 from app.models.tax_return import DocumentUpdate
+from sqlalchemy import text
 
 logger = structlog.get_logger()
 

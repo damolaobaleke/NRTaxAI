@@ -7,7 +7,7 @@ from typing import Dict, Any, Optional
 import structlog
 
 from app.services.audit_service import get_audit_service
-from app.models.common import AuditAction, AuditActorType
+from app.models.audit import AuditAction, ActorType
 
 logger = structlog.get_logger()
 
@@ -22,7 +22,7 @@ async def log_user_action(
     try:
         audit_service = await get_audit_service()
         await audit_service.create_audit_log(
-            actor_type=AuditActorType.USER.value,
+            actor_type=ActorType.USER.value,
             actor_id=user_id,
             return_id=return_id,
             action=action,
@@ -42,7 +42,7 @@ async def log_operator_action(
     try:
         audit_service = await get_audit_service()
         await audit_service.create_audit_log(
-            actor_type=AuditActorType.OPERATOR.value,
+            actor_type=ActorType.OPERATOR.value,
             actor_id=operator_id,
             return_id=return_id,
             action=action,
@@ -61,7 +61,7 @@ async def log_system_action(
     try:
         audit_service = await get_audit_service()
         await audit_service.create_audit_log(
-            actor_type=AuditActorType.SYSTEM.value,
+            actor_type=ActorType.SYSTEM.value,
             actor_id=None,
             return_id=return_id,
             action=action,

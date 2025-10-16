@@ -9,7 +9,8 @@ from fastapi.security import HTTPBearer
 from app.core.config import settings
 from app.core.database import get_database
 from app.services.auth_service import AuthService, create_access_token, create_refresh_token, verify_token, get_current_user
-from app.models.user import UserCreate, Token, UserInDB
+from app.models.user import UserCreate, Token, UserInDB, UserLogin
+from sqlalchemy import text
 
 router = APIRouter()
 security = HTTPBearer()
@@ -53,14 +54,13 @@ async def register(user_data: UserCreate, db = Depends(get_database)):
 
 @router.post("/login", response_model=Token)
 async def login(
-    email: str,
-    password: str,
+    login_data: UserLogin,
     db = Depends(get_database)
 ):
     """Login user"""
     auth_service = AuthService(db)
     
-    user = await auth_service.authenticate_user(email, password)
+    user = await auth_service.authenticate_user(login_data.email, login_data.password)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -89,10 +89,11 @@ async def refresh_token(
         token_data = verify_token(refresh_token, token_type="refresh")
         
         # Verify user still exists
-        user = await db.fetch_one(
-            "SELECT id, email FROM users WHERE id = :user_id",
+        result = await db.execute(
+            text("SELECT id, email FROM users WHERE id = :user_id"),
             {"user_id": token_data.user_id}
         )
+        user = result.fetchone()
         
         if not user:
             raise HTTPException(

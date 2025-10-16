@@ -18,7 +18,8 @@ import './App.css';
 const theme = createTheme({
   palette: {
     primary: {
-      main: '#1976d2',
+      main: '#0B402F',
+      // light: '#1976d2',
     },
     secondary: {
       main: '#dc004e',
@@ -28,7 +29,7 @@ const theme = createTheme({
     },
   },
   typography: {
-    fontFamily: '"Roboto", "Helvetica", "Arial", sans-serif',
+    fontFamily: '"Poppins", "Roboto", "Helvetica", "Arial", sans-serif',
     h1: {
       fontWeight: 600,
     },

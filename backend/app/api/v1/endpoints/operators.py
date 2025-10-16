@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from app.core.database import get_database
 from app.services.operator_service import get_operator_service
 from app.models.operator import OperatorInDB
+from sqlalchemy import text
 
 router = APIRouter()
 
@@ -33,10 +34,11 @@ async def get_current_operator(
     """Get current authenticated operator"""
     # TODO: Implement proper operator authentication
     # For now, simple lookup
-    operator = await db.fetch_one(
-        "SELECT * FROM operators WHERE id = :operator_id",
-        {"operator_id": operator_id}
+    result = await db.execute(
+    text("SELECT * FROM operators WHERE id = :operator_id"),
+    {"operator_id": operator_id}
     )
+    operator = result.fetchone()
     
     if not operator:
         raise HTTPException(

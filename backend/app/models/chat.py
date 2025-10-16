@@ -93,4 +93,4 @@ class ChatMessageResponse(BaseModel):
     """Chat message response model"""
     message: str
     session_id: UUID
-    message_id: UUID
+    message_id: Optional[UUID] = None
