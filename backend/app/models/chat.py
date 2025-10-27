@@ -49,7 +49,7 @@ class ChatMessageBase(BaseModel):
     """Base chat message model"""
     role: str = Field(..., max_length=20)  # user, assistant, system, tool
     content: Optional[str] = None
-    tool_calls_json: Optional[Dict[str, Any]] = None
+    tool_calls_json: Optional[List[Dict[str, Any]]] = None
 
 
 class ChatMessageCreate(ChatMessageBase):

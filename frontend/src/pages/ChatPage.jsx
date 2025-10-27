@@ -39,6 +39,7 @@ import {
   Calculate,
   Description
 } from '@mui/icons-material';
+import ReactMarkdown from 'react-markdown';
 import { chatService } from '../services/authService';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -313,6 +314,7 @@ const ChatPage = () => {
   };
 
   const formatTimestamp = (timestamp) => {
+    // console.log("timestamp", timestamp)
     return new Date(timestamp).toLocaleTimeString([], { 
       hour: '2-digit', 
       minute: '2-digit' 
@@ -377,20 +379,86 @@ const ChatPage = () => {
         sx={{
           maxWidth: '70%',
           bgcolor: message.role === 'user' ? 'primary.light' : 'grey.100',
+          color: message.role === 'user' ? 'white' : 'black',
           borderRadius: 2,
           p: 2,
           position: 'relative'
         }}
       >
-        <Typography variant="body1" sx={{ mb: 1 }}>
-          {message.content}
-        </Typography>
+        <Box sx={{ mb: 1 }}>
+          <ReactMarkdown
+            components={{
+              // Custom styling for markdown elements
+              p: ({ children }) => <Typography variant="body1" sx={{ mb: 1 }}>{children}</Typography>,
+              h1: ({ children }) => <Typography variant="h4" sx={{ mb: 2, mt: 2 }}>{children}</Typography>,
+              h2: ({ children }) => <Typography variant="h5" sx={{ mb: 2, mt: 2 }}>{children}</Typography>,
+              h3: ({ children }) => <Typography variant="h6" sx={{ mb: 1, mt: 2 }}>{children}</Typography>,
+              h4: ({ children }) => <Typography variant="subtitle1" sx={{ mb: 1, mt: 1, fontWeight: 'bold' }}>{children}</Typography>,
+              h5: ({ children }) => <Typography variant="subtitle2" sx={{ mb: 1, mt: 1, fontWeight: 'bold' }}>{children}</Typography>,
+              h6: ({ children }) => <Typography variant="body1" sx={{ mb: 1, mt: 1, fontWeight: 'bold' }}>{children}</Typography>,
+              ul: ({ children }) => <Box component="ul" sx={{ pl: 2, mb: 1 }}>{children}</Box>,
+              ol: ({ children }) => <Box component="ol" sx={{ pl: 2, mb: 2 }}>{children}</Box>,
+              li: ({ children }) => <Box component="li" sx={{ mb: 1 }}>{children}</Box>,
+              strong: ({ children }) => <Typography component="span" sx={{ fontWeight: 'bold' }}>{children}</Typography>,
+              em: ({ children }) => <Typography component="span" sx={{ fontStyle: 'italic' }}>{children}</Typography>,
+              code: ({ children }) => (
+                <Box
+                  component="code"
+                  sx={{
+                    backgroundColor: 'grey.100',
+                    px: 1,
+                    py: 0.5,
+                    borderRadius: 1,
+                    fontFamily: 'monospace',
+                    fontSize: '0.875rem'
+                  }}
+                >
+                  {children}
+                </Box>
+              ),
+              pre: ({ children }) => (
+                <Box
+                  component="pre"
+                  sx={{
+                    backgroundColor: 'grey.100',
+                    p: 2,
+                    borderRadius: 1,
+                    overflow: 'auto',
+                    fontFamily: 'monospace',
+                    fontSize: '0.875rem',
+                    mb: 1
+                  }}
+                >
+                  {children}
+                </Box>
+              ),
+              blockquote: ({ children }) => (
+                <Box
+                  sx={{
+                    borderLeft: 4,
+                    borderColor: 'primary.main',
+                    pl: 2,
+                    ml: 2,
+                    mb: 1,
+                    fontStyle: 'italic'
+                  }}
+                >
+                  {children}
+                </Box>
+              )
+            }}
+          >
+            {message.content}
+          </ReactMarkdown>
+          {/* {console.log("message role:", message.role)}
+          {console.log("message content:", message.content)} */}
+        </Box>
         
         {renderToolCalls(message.toolCalls)}
         
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1 }}>
-          <Typography variant="caption" color="text.secondary">
-            {formatTimestamp(message.timestamp)}
+          <Typography variant="caption" color={message.role === 'user' ? 'white' : 'text.secondary'}>
+            {formatTimestamp(message.created_at)}
           </Typography>
           {message.role === 'user' && getMessageStatusIcon(message.status)}
         </Box>

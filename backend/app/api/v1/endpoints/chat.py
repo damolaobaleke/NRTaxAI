@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List, Optional
 from uuid import UUID
 from sqlalchemy import text
+import json
 
 from app.core.database import get_database
 from app.services.auth_service import get_current_active_user
@@ -85,7 +86,7 @@ async def send_chat_message(
         message=message_request.message,
         context=context
     )
-    print(message_request.session_id,"Sent message response")
+    print(f"{message_request.session_id}\n==message response==\n")
     print(response)
     
     return ChatMessageResponse(
@@ -134,9 +135,21 @@ async def get_chat_history(
     )
     messages = result.fetchall()
     
+    # Process messages to handle tool_calls_json properly
+    processed_messages = []
+    for msg in messages:
+        msg_dict = msg._asdict()
+        # Parse tool_calls_json if it exists
+        if msg_dict.get("tool_calls_json"):
+            try:
+                msg_dict["tool_calls_json"] = json.loads(msg_dict["tool_calls_json"])
+            except (json.JSONDecodeError, TypeError):
+                msg_dict["tool_calls_json"] = None
+        processed_messages.append(ChatMessage(**msg_dict))
+    
     return ChatHistory(
         session=ChatSession(**session._asdict()),
-        messages=[ChatMessage(**msg._asdict()) for msg in messages]
+        messages=processed_messages
     )
 
 
