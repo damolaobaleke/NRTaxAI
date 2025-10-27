@@ -5,10 +5,11 @@ Authorization Service for Form 8879 Signatures
 import json
 import hashlib
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import structlog
 
 from app.core.database import get_database
+from sqlalchemy import text
 
 logger = structlog.get_logger()
 

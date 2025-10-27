@@ -18,7 +18,8 @@ import {
   Menu as MenuIcon,
   Chat,
   Description,
-  Dashboard
+  Dashboard,
+  MenuBook
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -68,42 +69,56 @@ const Navbar = () => {
           NRTaxAI
         </Typography>
 
-        {isAuthenticated && (
-          <Box sx={{ flexGrow: 1, display: 'flex', gap: 1 }}>
-            <Button
-              color="inherit"
-              startIcon={<Dashboard />}
-              onClick={() => navigate('/dashboard')}
-              sx={{
-                backgroundColor: isActive('/dashboard') ? 'rgba(255,255,255,0.1)' : 'transparent'
-              }}
-            >
-              Dashboard
-            </Button>
-            <Button
-              color="inherit"
-              startIcon={<Chat />}
-              onClick={() => navigate('/chat')}
-              sx={{
-                backgroundColor: isActive('/chat') ? 'rgba(255,255,255,0.1)' : 'transparent'
-              }}
-            >
-              Chat
-            </Button>
-            <Button
-              color="inherit"
-              startIcon={<Description />}
-              onClick={() => navigate('/tax-returns')}
-              sx={{
-                backgroundColor: isActive('/tax-returns') ? 'rgba(255,255,255,0.1)' : 'transparent'
-              }}
-            >
-              Tax Returns
-            </Button>
-          </Box>
-        )}
+        {/* Forms Guide - accessible to all */}
+        <Box sx={{ flexGrow: 1, display: 'flex', gap: 1 }}>
+          {isAuthenticated && (
+            <>
+              <Button
+                color="inherit"
+                startIcon={<Dashboard />}
+                onClick={() => navigate('/dashboard')}
+                sx={{
+                  backgroundColor: isActive('/dashboard') ? 'rgba(255,255,255,0.1)' : 'transparent'
+                }}
+              >
+                Dashboard
+              </Button>
+              <Button
+                color="inherit"
+                startIcon={<Chat />}
+                onClick={() => navigate('/chat')}
+                sx={{
+                  backgroundColor: isActive('/chat') ? 'rgba(255,255,255,0.1)' : 'transparent'
+                }}
+              >
+                Chat
+              </Button>
+              <Button
+                color="inherit"
+                startIcon={<Description />}
+                onClick={() => navigate('/tax-returns')}
+                sx={{
+                  backgroundColor: isActive('/tax-returns') ? 'rgba(255,255,255,0.1)' : 'transparent'
+                }}
+              >
+                Tax Returns
+              </Button>
+            </>
+          )}
+          
+          <Button
+            color="inherit"
+            startIcon={<MenuBook />}
+            onClick={() => navigate('/forms-guide')}
+            sx={{
+              backgroundColor: isActive('/forms-guide') ? 'rgba(255,255,255,0.1)' : 'transparent'
+            }}
+          >
+            Forms Guide
+          </Button>
+        </Box>
 
-        <Box sx={{ flexGrow: isAuthenticated ? 0 : 1 }} />
+        <Box sx={{ flexGrow: 0 }} />
 
         {isAuthenticated ? (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>

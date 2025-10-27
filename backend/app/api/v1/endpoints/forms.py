@@ -6,10 +6,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from typing import Optional, List
 from uuid import UUID
 
+from app.core.config import Settings
 from app.core.database import get_database
-from app.services.auth import get_current_user
+from app.services.auth_service import get_current_user
 from app.services.form_generator import form_generator
 from app.models.user import UserInDB
+from sqlalchemy import text
 
 router = APIRouter()
 
@@ -24,13 +26,14 @@ async def generate_tax_forms(
     
     try:
         # Get tax return
-        tax_return = await db.fetch_one(
-            """
-            SELECT * FROM tax_returns 
-            WHERE id = :return_id AND user_id = :user_id
-            """,
-            {"return_id": str(return_id), "user_id": str(current_user.id)}
+        result = await db.execute(
+        text("""
+                    SELECT * FROM tax_returns 
+                    WHERE id = :return_id AND user_id = :user_id
+                    """),
+        {"return_id": str(return_id), "user_id": str(current_user.id)}
         )
+        tax_return = result.fetchone()
         
         if not tax_return:
             raise HTTPException(
@@ -46,10 +49,11 @@ async def generate_tax_forms(
             )
         
         # Get user profile
-        user_profile = await db.fetch_one(
-            "SELECT * FROM user_profiles WHERE user_id = :user_id",
-            {"user_id": str(current_user.id)}
+        result = await db.execute(
+        text("SELECT * FROM user_profiles WHERE user_id = :user_id"),
+        {"user_id": str(current_user.id)}
         )
+        user_profile = result.fetchone()
         
         if not user_profile:
             raise HTTPException(
@@ -148,13 +152,14 @@ async def list_generated_forms(
     
     try:
         # Verify return ownership
-        tax_return = await db.fetch_one(
-            """
+        result = await db.execute(
+        text("""
             SELECT * FROM tax_returns 
             WHERE id = :return_id AND user_id = :user_id
-            """,
-            {"return_id": str(return_id), "user_id": str(current_user.id)}
+            """),
+        {"return_id": str(return_id), "user_id": str(current_user.id)}
         )
+        tax_return = result.fetchone()
         
         if not tax_return:
             raise HTTPException(
@@ -163,25 +168,26 @@ async def list_generated_forms(
             )
         
         # Get all forms
-        forms = await db.fetch_all(
-            """
+        result = await db.execute(
+            text("""
             SELECT id, form_type, s3_key, status, version, created_at
             FROM forms 
             WHERE return_id = :return_id
             ORDER BY created_at DESC
-            """,
+            """),
             {"return_id": str(return_id)}
         )
+        forms = result.fetchall()
         
         form_list = []
         for form in forms:
             form_list.append({
-                "id": str(form["id"]),
-                "form_type": form["form_type"],
-                "s3_key": form["s3_key"],
-                "status": form["status"],
-                "version": form["version"],
-                "created_at": form["created_at"].isoformat() if form["created_at"] else None
+                "id": str(form.id),
+                "form_type": form.form_type,
+                "s3_key": form.s3_key,
+                "status": form.status,
+                "version": form.version,
+                "created_at": form.created_at.isoformat() if form.created_at else None
             })
         
         return {
@@ -210,13 +216,14 @@ async def get_form_download_url(
     
     try:
         # Verify return ownership
-        tax_return = await db.fetch_one(
-            """
+        result = await db.execute(
+        text("""
             SELECT * FROM tax_returns 
             WHERE id = :return_id AND user_id = :user_id
-            """,
-            {"return_id": str(return_id), "user_id": str(current_user.id)}
+            """),
+        {"return_id": str(return_id), "user_id": str(current_user.id)}
         )
+        tax_return = result.fetchone()
         
         if not tax_return:
             raise HTTPException(
@@ -225,13 +232,14 @@ async def get_form_download_url(
             )
         
         # Get form
-        form = await db.fetch_one(
-            """
+        result = await db.execute(
+        text("""
             SELECT * FROM forms 
             WHERE id = :form_id AND return_id = :return_id
-            """,
+            """),
             {"form_id": str(form_id), "return_id": str(return_id)}
         )
+        form = result.fetchone()
         
         if not form:
             raise HTTPException(
@@ -244,7 +252,7 @@ async def get_form_download_url(
         
         download_url = await s3_service.generate_presigned_download_url(
             file_key=form["s3_key"],
-            bucket=settings.S3_BUCKET_PDFS,
+            bucket=Settings.S3_BUCKET_PDFS,
             expires_in=3600
         )
         

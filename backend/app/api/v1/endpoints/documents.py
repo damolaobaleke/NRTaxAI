@@ -7,7 +7,7 @@ from typing import List, Optional
 from uuid import UUID
 
 from app.core.database import get_database
-from app.services.auth import get_current_active_user
+from app.services.auth_service import get_current_active_user
 from app.services.document_service import get_document_service
 from app.models.user import UserInDB
 from app.models.tax_return import Document, DocumentCreate, DocumentUpdate
@@ -94,7 +94,7 @@ async def document_ingest_callback():
 @router.get("/", response_model=List[dict])
 async def list_documents(
     return_id: Optional[UUID] = None,
-    status: Optional[str] = None,
+    doc_status: Optional[str] = None,
     current_user: UserInDB = Depends(get_current_active_user)
 ):
     """List documents for current user"""
@@ -105,7 +105,7 @@ async def list_documents(
         documents = await document_service.list_documents(
             user_id=str(current_user.id),
             return_id=str(return_id) if return_id else None,
-            status=status
+            status=doc_status if doc_status else None
         )
         
         return documents

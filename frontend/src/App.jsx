@@ -11,13 +11,15 @@ import Dashboard from './pages/Dashboard';
 import TaxReturnPage from './pages/TaxReturnPage';
 import ChatPage from './pages/ChatPage';
 import ProfilePage from './pages/ProfilePage';
+import TaxFormsGuide from './pages/TaxFormsGuide';
 import './App.css';
 
 // Create Material UI theme
 const theme = createTheme({
   palette: {
     primary: {
-      main: '#1976d2',
+      main: '#0B402F',
+      // light: '#1976d2',
     },
     secondary: {
       main: '#dc004e',
@@ -27,7 +29,7 @@ const theme = createTheme({
     },
   },
   typography: {
-    fontFamily: '"Roboto", "Helvetica", "Arial", sans-serif',
+    fontFamily: '"Poppins", "Roboto", "Helvetica", "Arial", sans-serif',
     h1: {
       fontWeight: 600,
     },
@@ -94,6 +96,9 @@ function App() {
                     </PublicRoute>
                   } 
                 />
+                
+                {/* Public knowledge base - accessible to all */}
+                <Route path="/forms-guide" element={<TaxFormsGuide />} />
                 
                 {/* Protected routes */}
                 <Route 

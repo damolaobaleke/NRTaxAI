@@ -128,7 +128,7 @@ const Dashboard = () => {
                   onClick={() => navigate('/chat')}
                   fullWidth
                 >
-                  Ask AI Assistant
+                  Ask NRTaxAI
                 </Button>
                 <Button
                   variant="outlined"

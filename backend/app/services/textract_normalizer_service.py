@@ -132,6 +132,328 @@ class TextractNormalizer:
                     "confidence_threshold": 95,
                     "data_type": "ein"
                 }
+            },
+            
+            "1099DIV": {
+                "payer_name": {
+                    "patterns": [r"payer\s*name", r"company\s*name"],
+                    "confidence_threshold": 80
+                },
+                "recipient_name": {
+                    "patterns": [r"recipient\s*name", r"your\s*name"],
+                    "confidence_threshold": 80
+                },
+                "total_ordinary_dividends": {
+                    "patterns": [r"box\s*1a", r"total\s*ordinary\s*dividends.*?(\d+\.?\d*)", r"(\d+\.?\d*).*?ordinary\s*dividends"],
+                    "confidence_threshold": 85,
+                    "data_type": "currency"
+                },
+                "qualified_dividends": {
+                    "patterns": [r"box\s*1b", r"qualified\s*dividends.*?(\d+\.?\d*)", r"(\d+\.?\d*).*?qualified\s*dividends"],
+                    "confidence_threshold": 85,
+                    "data_type": "currency"
+                },
+                "total_capital_gain_distributions": {
+                    "patterns": [r"box\s*2a", r"total\s*capital\s*gain.*?(\d+\.?\d*)", r"(\d+\.?\d*).*?capital\s*gain"],
+                    "confidence_threshold": 85,
+                    "data_type": "currency"
+                },
+                "federal_income_tax_withheld": {
+                    "patterns": [r"box\s*4", r"federal\s*income\s*tax.*?(\d+\.?\d*)", r"(\d+\.?\d*).*?federal\s*income\s*tax"],
+                    "confidence_threshold": 85,
+                    "data_type": "currency"
+                },
+                "foreign_tax_paid": {
+                    "patterns": [r"box\s*6", r"foreign\s*tax\s*paid.*?(\d+\.?\d*)", r"(\d+\.?\d*).*?foreign\s*tax"],
+                    "confidence_threshold": 85,
+                    "data_type": "currency"
+                },
+                "recipient_tin": {
+                    "patterns": [r"(\d{3}-\d{2}-\d{4})", r"(\d{9})"],
+                    "confidence_threshold": 95,
+                    "data_type": "ssn"
+                },
+                "payer_tin": {
+                    "patterns": [r"(\d{2}-\d{7})", r"(\d{9})"],
+                    "confidence_threshold": 95,
+                    "data_type": "ein"
+                }
+            },
+            
+            "1099G": {
+                "payer_name": {
+                    "patterns": [r"payer\s*name", r"government\s*agency"],
+                    "confidence_threshold": 80
+                },
+                "recipient_name": {
+                    "patterns": [r"recipient\s*name", r"your\s*name"],
+                    "confidence_threshold": 80
+                },
+                "unemployment_compensation": {
+                    "patterns": [r"box\s*1", r"unemployment\s*compensation.*?(\d+\.?\d*)", r"(\d+\.?\d*).*?unemployment"],
+                    "confidence_threshold": 85,
+                    "data_type": "currency"
+                },
+                "state_tax_refund": {
+                    "patterns": [r"box\s*2", r"state.*?refund.*?(\d+\.?\d*)", r"(\d+\.?\d*).*?refund"],
+                    "confidence_threshold": 85,
+                    "data_type": "currency"
+                },
+                "federal_income_tax_withheld": {
+                    "patterns": [r"box\s*4", r"federal\s*income\s*tax.*?(\d+\.?\d*)", r"(\d+\.?\d*).*?federal\s*income\s*tax"],
+                    "confidence_threshold": 85,
+                    "data_type": "currency"
+                },
+                "state_income_tax_withheld": {
+                    "patterns": [r"box\s*11", r"state\s*income\s*tax.*?(\d+\.?\d*)", r"(\d+\.?\d*).*?state\s*tax"],
+                    "confidence_threshold": 85,
+                    "data_type": "currency"
+                },
+                "recipient_tin": {
+                    "patterns": [r"(\d{3}-\d{2}-\d{4})", r"(\d{9})"],
+                    "confidence_threshold": 95,
+                    "data_type": "ssn"
+                },
+                "payer_tin": {
+                    "patterns": [r"(\d{2}-\d{7})", r"(\d{9})"],
+                    "confidence_threshold": 95,
+                    "data_type": "ein"
+                }
+            },
+            
+            "1099MISC": {
+                "payer_name": {
+                    "patterns": [r"payer\s*name", r"company\s*name"],
+                    "confidence_threshold": 80
+                },
+                "recipient_name": {
+                    "patterns": [r"recipient\s*name", r"your\s*name"],
+                    "confidence_threshold": 80
+                },
+                "rents": {
+                    "patterns": [r"box\s*1", r"rents.*?(\d+\.?\d*)", r"(\d+\.?\d*).*?rents"],
+                    "confidence_threshold": 85,
+                    "data_type": "currency"
+                },
+                "royalties": {
+                    "patterns": [r"box\s*2", r"royalties.*?(\d+\.?\d*)", r"(\d+\.?\d*).*?royalties"],
+                    "confidence_threshold": 85,
+                    "data_type": "currency"
+                },
+                "other_income": {
+                    "patterns": [r"box\s*3", r"other\s*income.*?(\d+\.?\d*)", r"(\d+\.?\d*).*?other\s*income"],
+                    "confidence_threshold": 85,
+                    "data_type": "currency"
+                },
+                "federal_income_tax_withheld": {
+                    "patterns": [r"box\s*4", r"federal\s*income\s*tax.*?(\d+\.?\d*)", r"(\d+\.?\d*).*?federal\s*income\s*tax"],
+                    "confidence_threshold": 85,
+                    "data_type": "currency"
+                },
+                "fishing_boat_proceeds": {
+                    "patterns": [r"box\s*5", r"fishing.*?(\d+\.?\d*)", r"(\d+\.?\d*).*?fishing"],
+                    "confidence_threshold": 85,
+                    "data_type": "currency"
+                },
+                "medical_health_payments": {
+                    "patterns": [r"box\s*6", r"medical.*?(\d+\.?\d*)", r"(\d+\.?\d*).*?medical"],
+                    "confidence_threshold": 85,
+                    "data_type": "currency"
+                },
+                "recipient_tin": {
+                    "patterns": [r"(\d{3}-\d{2}-\d{4})", r"(\d{9})"],
+                    "confidence_threshold": 95,
+                    "data_type": "ssn"
+                },
+                "payer_tin": {
+                    "patterns": [r"(\d{2}-\d{7})", r"(\d{9})"],
+                    "confidence_threshold": 95,
+                    "data_type": "ein"
+                }
+            },
+            
+            "1099B": {
+                "payer_name": {
+                    "patterns": [r"payer\s*name", r"broker\s*name"],
+                    "confidence_threshold": 80
+                },
+                "recipient_name": {
+                    "patterns": [r"recipient\s*name", r"your\s*name"],
+                    "confidence_threshold": 80
+                },
+                "proceeds": {
+                    "patterns": [r"box\s*1d", r"proceeds.*?(\d+\.?\d*)", r"(\d+\.?\d*).*?proceeds"],
+                    "confidence_threshold": 85,
+                    "data_type": "currency"
+                },
+                "cost_basis": {
+                    "patterns": [r"box\s*1e", r"cost.*?basis.*?(\d+\.?\d*)", r"(\d+\.?\d*).*?cost.*?basis"],
+                    "confidence_threshold": 85,
+                    "data_type": "currency"
+                },
+                "gain_or_loss": {
+                    "patterns": [r"box\s*1g", r"gain.*?loss.*?(\d+\.?\d*)", r"(\d+\.?\d*).*?gain"],
+                    "confidence_threshold": 85,
+                    "data_type": "currency"
+                },
+                "federal_income_tax_withheld": {
+                    "patterns": [r"box\s*4", r"federal\s*income\s*tax.*?(\d+\.?\d*)", r"(\d+\.?\d*).*?federal\s*income\s*tax"],
+                    "confidence_threshold": 85,
+                    "data_type": "currency"
+                },
+                "recipient_tin": {
+                    "patterns": [r"(\d{3}-\d{2}-\d{4})", r"(\d{9})"],
+                    "confidence_threshold": 95,
+                    "data_type": "ssn"
+                },
+                "payer_tin": {
+                    "patterns": [r"(\d{2}-\d{7})", r"(\d{9})"],
+                    "confidence_threshold": 95,
+                    "data_type": "ein"
+                }
+            },
+            
+            "1099R": {
+                "payer_name": {
+                    "patterns": [r"payer\s*name", r"institution\s*name"],
+                    "confidence_threshold": 80
+                },
+                "recipient_name": {
+                    "patterns": [r"recipient\s*name", r"your\s*name"],
+                    "confidence_threshold": 80
+                },
+                "gross_distribution": {
+                    "patterns": [r"box\s*1", r"gross\s*distribution.*?(\d+\.?\d*)", r"(\d+\.?\d*).*?gross\s*distribution"],
+                    "confidence_threshold": 85,
+                    "data_type": "currency"
+                },
+                "taxable_amount": {
+                    "patterns": [r"box\s*2a", r"taxable\s*amount.*?(\d+\.?\d*)", r"(\d+\.?\d*).*?taxable\s*amount"],
+                    "confidence_threshold": 85,
+                    "data_type": "currency"
+                },
+                "federal_income_tax_withheld": {
+                    "patterns": [r"box\s*4", r"federal\s*income\s*tax.*?(\d+\.?\d*)", r"(\d+\.?\d*).*?federal\s*income\s*tax"],
+                    "confidence_threshold": 85,
+                    "data_type": "currency"
+                },
+                "distribution_code": {
+                    "patterns": [r"box\s*7", r"distribution\s*code.*?([A-Z\d])", r"code.*?([A-Z\d])"],
+                    "confidence_threshold": 90,
+                    "data_type": "code"
+                },
+                "recipient_tin": {
+                    "patterns": [r"(\d{3}-\d{2}-\d{4})", r"(\d{9})"],
+                    "confidence_threshold": 95,
+                    "data_type": "ssn"
+                },
+                "payer_tin": {
+                    "patterns": [r"(\d{2}-\d{7})", r"(\d{9})"],
+                    "confidence_threshold": 95,
+                    "data_type": "ein"
+                }
+            },
+            
+            "1098T": {
+                "filer_name": {
+                    "patterns": [r"filer\s*name", r"institution\s*name", r"school\s*name"],
+                    "confidence_threshold": 80
+                },
+                "student_name": {
+                    "patterns": [r"student\s*name", r"your\s*name"],
+                    "confidence_threshold": 80
+                },
+                "payments_received": {
+                    "patterns": [r"box\s*1", r"payments.*?received.*?(\d+\.?\d*)", r"(\d+\.?\d*).*?payments"],
+                    "confidence_threshold": 85,
+                    "data_type": "currency"
+                },
+                "qualified_tuition_expenses": {
+                    "patterns": [r"box\s*2", r"qualified.*?tuition.*?(\d+\.?\d*)", r"(\d+\.?\d*).*?tuition"],
+                    "confidence_threshold": 85,
+                    "data_type": "currency"
+                },
+                "scholarships_grants": {
+                    "patterns": [r"box\s*5", r"scholarships.*?grants.*?(\d+\.?\d*)", r"(\d+\.?\d*).*?scholarship"],
+                    "confidence_threshold": 85,
+                    "data_type": "currency"
+                },
+                "adjustments_prior_year": {
+                    "patterns": [r"box\s*6", r"adjustments.*?prior.*?(\d+\.?\d*)", r"(\d+\.?\d*).*?adjustment"],
+                    "confidence_threshold": 85,
+                    "data_type": "currency"
+                },
+                "checked_half_time": {
+                    "patterns": [r"box\s*8.*?checked", r"half.*?time.*?student"],
+                    "confidence_threshold": 75,
+                    "data_type": "boolean"
+                },
+                "student_tin": {
+                    "patterns": [r"(\d{3}-\d{2}-\d{4})", r"(\d{9})"],
+                    "confidence_threshold": 95,
+                    "data_type": "ssn"
+                },
+                "filer_tin": {
+                    "patterns": [r"(\d{2}-\d{7})", r"(\d{9})"],
+                    "confidence_threshold": 95,
+                    "data_type": "ein"
+                }
+            },
+            
+            "1042S": {
+                "withholding_agent_name": {
+                    "patterns": [r"withholding\s*agent\s*name", r"agent\s*name", r"payer\s*name"],
+                    "confidence_threshold": 80
+                },
+                "recipient_name": {
+                    "patterns": [r"recipient\s*name", r"your\s*name"],
+                    "confidence_threshold": 80
+                },
+                "gross_income": {
+                    "patterns": [r"box\s*2", r"gross\s*income.*?(\d+\.?\d*)", r"(\d+\.?\d*).*?gross\s*income"],
+                    "confidence_threshold": 85,
+                    "data_type": "currency"
+                },
+                "chapter_3_exemption_code": {
+                    "patterns": [r"box\s*3a", r"exemption\s*code.*?(\d+)", r"code.*?(\d+)"],
+                    "confidence_threshold": 90,
+                    "data_type": "code"
+                },
+                "chapter_4_exemption_code": {
+                    "patterns": [r"box\s*4a", r"chapter\s*4.*?code.*?(\d+)"],
+                    "confidence_threshold": 90,
+                    "data_type": "code"
+                },
+                "tax_rate": {
+                    "patterns": [r"box\s*5", r"tax\s*rate.*?(\d+\.?\d*)", r"(\d+\.?\d*).*?%"],
+                    "confidence_threshold": 85,
+                    "data_type": "percentage"
+                },
+                "federal_tax_withheld": {
+                    "patterns": [r"box\s*7a", r"federal\s*tax\s*withheld.*?(\d+\.?\d*)", r"(\d+\.?\d*).*?withheld"],
+                    "confidence_threshold": 85,
+                    "data_type": "currency"
+                },
+                "income_code": {
+                    "patterns": [r"box\s*1", r"income\s*code.*?(\d+)", r"code.*?(\d+)"],
+                    "confidence_threshold": 90,
+                    "data_type": "code"
+                },
+                "country_code": {
+                    "patterns": [r"country.*?([A-Z]{2})", r"recipient.*?country.*?([A-Z]{2})"],
+                    "confidence_threshold": 85,
+                    "data_type": "country_code"
+                },
+                "recipient_tin": {
+                    "patterns": [r"(\d{3}-\d{2}-\d{4})", r"(\d{9})"],
+                    "confidence_threshold": 95,
+                    "data_type": "ssn"
+                },
+                "withholding_agent_ein": {
+                    "patterns": [r"(\d{2}-\d{7})", r"(\d{9})"],
+                    "confidence_threshold": 95,
+                    "data_type": "ein"
+                }
             }
         }
     

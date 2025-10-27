@@ -4,20 +4,40 @@ OpenAI Chat Service with Tool Calling
 
 import json
 import openai
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 import structlog
+from sqlalchemy import text
 
 from app.core.config import settings
 from app.services.tax_rules_engine import get_tax_rules_engine
-from app.services.extraction_pipeline import ExtractionPipeline
+from app.services.document_extraction_pipeline import ExtractionPipeline
+from app.services.document_aggregation_service import document_aggregation_service
 from app.core.database import get_database
+from sqlalchemy import text
 
 logger = structlog.get_logger()
 
 # Initialize OpenAI client
 openai.api_key = settings.OPENAI_API_KEY
 
+# Substantial Presence Test/Residency Status Determination:
+# https://www.irs.gov/individuals/international-taxpayers/determining-an-individuals-tax-residency-status
+# https://www.irs.gov/individuals/international-taxpayers/substantial-presence-test
+# You will be considered a United States resident for tax purposes if you meet the substantial presence test for the calendar year. To meet this test, you must be physically present in the United States (U.S.) on at least:
+
+# 31 days during the current year, and
+# 183 days during the 3-year period that includes the current year and the 2 years immediately before that, counting:
+# All the days you were present in the current year, and
+# 1/3 of the days you were present in the first year before the current year, and
+# 1/6 of the days you were present in the second year before the current year.
+
+# Formula:
+# Total = (Current Year Days) + (Prior Year Days × 1/3) + (Two Years Ago Days × 1/6)
+# Result: Resident if Current Year ≥ 31 AND Total ≥ 183 days
+
+# Tax Treaty Benefits:
+# https://www.irs.gov/individuals/international-taxpayers/tax-treaties
 
 class ChatService:
     """OpenAI-powered chat service with tool calling for tax assistance"""
@@ -76,7 +96,7 @@ class ChatService:
                         "properties": {
                             "visa_type": {
                                 "type": "string",
-                                "description": "Visa classification (e.g., H1B, F-1, J-1)"
+                                "description": "Visa classification (e.g., H1B, F-1, J-1, O-1, E2, TN, etc.)"
                             },
                             "entry_date": {
                                 "type": "string",
@@ -99,7 +119,32 @@ class ChatService:
                                 "description": "Tax year to check"
                             }
                         },
-                        "required": ["visa_type", "days_current_year"]
+                        "required": ["visa_type", "days_current_year", "days_prior_year", "days_two_years_ago", "tax_year"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "check_fica_exemption",
+                    "description": "Check if student is exempt from FICA (Social Security + Medicare) taxes. F-1, J-1, M-1, Q-1, Q-2 students are exempt for first 5 calendar years in USA. Alerts if FICA was incorrectly withheld and student can claim refund via Form 843.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "visa_type": {
+                                "type": "string",
+                                "description": "Visa classification (F-1, J-1, M-1, Q-1, Q-2, H1B, etc.)"
+                            },
+                            "entry_date": {
+                                "type": "string",
+                                "description": "First entry date to US (YYYY-MM-DD)"
+                            },
+                            "tax_year": {
+                                "type": "integer",
+                                "description": "Tax year to check"
+                            }
+                        },
+                        "required": ["visa_type", "entry_date", "tax_year"]
                     }
                 }
             },
@@ -124,7 +169,7 @@ class ChatService:
                                 "description": "Years in current visa status"
                             }
                         },
-                        "required": ["country_code", "visa_type"]
+                        "required": ["country_code", "visa_type", "years_in_status"]
                     }
                 }
             },
@@ -210,9 +255,7 @@ Remember: Tax preparation requires accuracy. Always use the tools to get exact c
             AI response with tool calls if applicable
         """
         try:
-            logger.info("Processing chat message", 
-                       session_id=session_id,
-                       user_id=user_id)
+            logger.info("Processing chat message", session_id=session_id, user_id=user_id)
             
             # Get chat history
             chat_history = await self._get_chat_history(session_id)
@@ -238,7 +281,7 @@ Remember: Tax preparation requires accuracy. Always use the tools to get exact c
             # Store user message
             await self._store_message(session_id, "user", message)
             
-            # Call OpenAI with tools
+            # ================================ Call OpenAI with tools ================================
             response = await self._call_openai_with_tools(
                 messages=messages,
                 user_id=user_id,
@@ -257,7 +300,7 @@ Remember: Tax preparation requires accuracy. Always use the tools to get exact c
                 "session_id": session_id,
                 "message": response["content"],
                 "tool_calls": response.get("tool_calls", []),
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
             
         except Exception as e:
@@ -272,7 +315,7 @@ Remember: Tax preparation requires accuracy. Always use the tools to get exact c
     ) -> Dict[str, Any]:
         """Call OpenAI API with tool support"""
         try:
-            # Initial API call
+            # ================================ Initial API call ================================
             response = openai.chat.completions.create(
                 model=self.model,
                 messages=messages,
@@ -381,6 +424,9 @@ Remember: Tax preparation requires accuracy. Always use the tools to get exact c
             elif function_name == "check_residency_status":
                 return await self._tool_check_residency_status(function_args)
             
+            elif function_name == "check_fica_exemption":
+                return await self._tool_check_fica_exemption(function_args)
+            
             elif function_name == "check_treaty_benefits":
                 return await self._tool_check_treaty_benefits(function_args)
             
@@ -413,23 +459,30 @@ Remember: Tax preparation requires accuracy. Always use the tools to get exact c
     ) -> Dict[str, Any]:
         """Get document status for a tax return"""
         try:
-            documents = await self.db.fetch_all(
-                """
+            documents = await self.db.execute(
+                text("""
                 SELECT id, doc_type, status, created_at 
                 FROM documents 
                 WHERE return_id = :return_id AND user_id = :user_id
                 ORDER BY created_at DESC
-                """,
+                """),
                 {"return_id": return_id, "user_id": user_id}
-            )
+            ).fetchall()
             
             doc_list = []
             for doc in documents:
+                if hasattr(doc, '_asdict'):
+                    doc_dict = doc._asdict()
+                else:
+                    # Fallback for tuples
+                    field_names = ['id', 'doc_type', 'status', 'created_at']
+                    doc_dict = dict(zip(field_names, doc))
+                
                 doc_list.append({
-                    "id": str(doc["id"]),
-                    "type": doc["doc_type"],
-                    "status": doc["status"],
-                    "uploaded_at": doc["created_at"].isoformat() if doc["created_at"] else None
+                    "id": str(doc_dict["id"]),
+                    "type": doc_dict["doc_type"],
+                    "status": doc_dict["status"],
+                    "uploaded_at": doc_dict["created_at"].isoformat() if doc_dict["created_at"] else None
                 })
             
             return {
@@ -471,20 +524,25 @@ Remember: Tax preparation requires accuracy. Always use the tools to get exact c
                 return {"error": "User profile not found"}
             
             # Get documents
-            documents = await self.db.fetch_all(
-                """
+            documents = await self.db.execute(
+                text("""
                 SELECT * FROM documents 
                 WHERE return_id = :return_id AND status = 'extracted'
-                """,
+                """),
                 {"return_id": return_id}
-            )
+            ).fetchall()
             
             if not documents:
                 return {"error": "No extracted documents found. Please upload and extract documents first."}
             
-            # Aggregate income and withholding data
-            income_data = await self._aggregate_income_from_documents(documents)
-            withholding_data = await self._aggregate_withholding_from_documents(documents)
+            # Aggregate income and withholding data using shared service
+            income_data = await document_aggregation_service.aggregate_income_from_documents(documents)
+            withholding_data = await document_aggregation_service.aggregate_withholding_from_documents(
+                documents,
+                visa_type=user_profile.get("visa_class"),
+                entry_date=user_data.get("entry_date"),
+                tax_year=tax_return["tax_year"]
+            )
             
             # Prepare user data
             user_data = {
@@ -594,6 +652,65 @@ Remember: Tax preparation requires accuracy. Always use the tools to get exact c
         except Exception as e:
             return {"error": str(e)}
     
+    async def _tool_check_fica_exemption(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Check if student is exempt from FICA taxes
+        
+        Per IRS rules: https://www.irs.gov/individuals/international-taxpayers/foreign-student-liability-for-social-security-and-medicare-taxes
+        F-1, J-1, M-1, Q-1, Q-2 students are exempt from FICA for first 5 calendar years
+        """
+        try:
+            visa_type = args.get("visa_type")
+            entry_date = args.get("entry_date")
+            tax_year = args.get("tax_year")
+            
+            is_exempt = document_aggregation_service.check_fica_exemption(visa_type, entry_date, tax_year)
+            
+            # Calculate years in US
+            from datetime import datetime
+            entry = datetime.strptime(entry_date, '%Y-%m-%d')
+            years_in_us = tax_year - entry.year + 1
+            
+            result = {
+                "visa_type": visa_type,
+                "entry_date": entry_date,
+                "tax_year": tax_year,
+                "years_in_us": years_in_us,
+                "fica_exempt": is_exempt,
+                "social_security_exempt": is_exempt,
+                "medicare_exempt": is_exempt,
+                "exemption_years_remaining": max(0, 5 - years_in_us) if is_exempt else 0,
+                "message": ""
+            }
+            
+            if is_exempt:
+                result["message"] = (
+                    f"✅ You ARE EXEMPT from FICA taxes for {tax_year}. "
+                    f"You are in year {years_in_us} of your 5-year exemption period. "
+                    f"Social Security and Medicare taxes should NOT be withheld from your wages. "
+                    f"If your W-2 shows these taxes were withheld, you can file Form 843 for a refund."
+                )
+                result["action_required"] = "Check W-2 for incorrect FICA withholding"
+                result["refund_form"] = "Form 843 + Form 8316"
+            else:
+                if years_in_us > 5:
+                    result["message"] = (
+                        f"❌ You are NOT EXEMPT from FICA taxes for {tax_year}. "
+                        f"You have been in the US for {years_in_us} calendar years (exemption is only first 5 years). "
+                        f"Social Security and Medicare taxes should be withheld from your wages."
+                    )
+                else:
+                    result["message"] = (
+                        f"❌ You are NOT EXEMPT from FICA taxes because your visa type ({visa_type}) "
+                        f"is not eligible for the student FICA exemption. "
+                        f"Only F-1, J-1, M-1, Q-1, and Q-2 visa holders qualify."
+                    )
+            
+            return result
+            
+        except Exception as e:
+            return {"error": str(e)}
+    
     async def _tool_get_tax_return_summary(
         self,
         return_id: str,
@@ -637,26 +754,43 @@ Remember: Tax preparation requires accuracy. Always use the tools to get exact c
         except Exception as e:
             return {"error": str(e)}
     
-    async def _get_chat_history(self, session_id: str) -> List[Dict[str, Any]]:
-        """Get chat history for session"""
+    async def _get_chat_history(self, session_id: str) -> List[Dict[str, Any]]: 
+        """Get chat history for a session
+        
+        Args:
+            session_id: The ID of the session to get chat history for
+
+        Returns:
+            A list of messages in the session
+
+        Raises:
+            Exception: If there is an error getting the chat history
+        """
         try:
-            messages = await self.db.fetch_all(
-                """
+            messages = await self.db.execute(
+                text("""
                 SELECT role, content, tool_calls_json, created_at 
                 FROM chat_messages 
                 WHERE session_id = :session_id
                 ORDER BY created_at ASC
                 LIMIT 50
-                """,
+                """),
                 {"session_id": session_id}
-            )
+            ).fetchall()
             
             history = []
             for msg in messages:
+                if hasattr(msg, '_asdict'):
+                    msg_dict = msg._asdict()
+                else:
+                    # Fallback for tuples
+                    field_names = ['role', 'content', 'tool_calls_json', 'created_at']
+                    msg_dict = dict(zip(field_names, msg))
+                
                 history.append({
-                    "role": msg["role"],
-                    "content": msg["content"],
-                    "tool_calls": json.loads(msg["tool_calls_json"]) if msg.get("tool_calls_json") else None
+                    "role": msg_dict["role"],
+                    "content": msg_dict["content"],
+                    "tool_calls": json.loads(msg_dict["tool_calls_json"]) if msg_dict.get("tool_calls_json") else None
                 })
             
             return history
@@ -672,13 +806,20 @@ Remember: Tax preparation requires accuracy. Always use the tools to get exact c
         content: str,
         tool_calls: Optional[List[Dict[str, Any]]] = None
     ):
-        """Store message in database"""
+        """Store message in database for a session
+        
+        Args:
+            session_id: The ID of the session to store the message for
+            role: The role of the message (user or assistant)
+            content: The content of the message
+            tool_calls: The tool calls made in the message
+        """
         try:
             await self.db.execute(
-                """
+                text("""
                 INSERT INTO chat_messages (session_id, role, content, tool_calls_json)
                 VALUES (:session_id, :role, :content, :tool_calls)
-                """,
+                """),
                 {
                     "session_id": session_id,
                     "role": role,
@@ -689,80 +830,3 @@ Remember: Tax preparation requires accuracy. Always use the tools to get exact c
             
         except Exception as e:
             logger.error("Failed to store message", error=str(e))
-    
-    async def _aggregate_income_from_documents(self, documents: list) -> Dict[str, Any]:
-        """Aggregate income from extracted documents"""
-        income_data = {
-            "wages": 0,
-            "interest": 0,
-            "self_employment": 0,
-            "us_work_days": 0,
-            "total_work_days": 0
-        }
-        
-        for doc in documents:
-            if not doc.get("extracted_json"):
-                continue
-            
-            try:
-                extracted_data = json.loads(doc["extracted_json"])
-                fields = extracted_data.get("extracted_fields", {})
-                
-                if doc["doc_type"] == "W2":
-                    wages = fields.get("wages", {}).get("value")
-                    if wages:
-                        income_data["wages"] += float(wages.replace(",", "").replace("$", ""))
-                
-                elif doc["doc_type"] == "1099INT":
-                    interest = fields.get("interest_income", {}).get("value")
-                    if interest:
-                        income_data["interest"] += float(interest.replace(",", "").replace("$", ""))
-                
-                elif doc["doc_type"] == "1099NEC":
-                    comp = fields.get("nonemployee_compensation", {}).get("value")
-                    if comp:
-                        income_data["self_employment"] += float(comp.replace(",", "").replace("$", ""))
-                
-            except (json.JSONDecodeError, ValueError, KeyError):
-                continue
-        
-        return income_data
-    
-    async def _aggregate_withholding_from_documents(self, documents: list) -> Dict[str, Any]:
-        """Aggregate withholding from extracted documents"""
-        withholding_data = {
-            "federal_income_tax": 0,
-            "social_security_tax": 0,
-            "medicare_tax": 0
-        }
-        
-        for doc in documents:
-            if not doc.get("extracted_json"):
-                continue
-            
-            try:
-                extracted_data = json.loads(doc["extracted_json"])
-                fields = extracted_data.get("extracted_fields", {})
-                
-                federal_tax = fields.get("federal_income_tax_withheld", {}).get("value")
-                if federal_tax:
-                    withholding_data["federal_income_tax"] += float(federal_tax.replace(",", "").replace("$", ""))
-                
-                ss_tax = fields.get("social_security_tax_withheld", {}).get("value")
-                if ss_tax:
-                    withholding_data["social_security_tax"] += float(ss_tax.replace(",", "").replace("$", ""))
-                
-                medicare_tax = fields.get("medicare_tax_withheld", {}).get("value")
-                if medicare_tax:
-                    withholding_data["medicare_tax"] += float(medicare_tax.replace(",", "").replace("$", ""))
-                
-            except (json.JSONDecodeError, ValueError, KeyError):
-                continue
-        
-        return withholding_data
-
-
-async def get_chat_service():
-    """Get chat service instance"""
-    db = await get_database()
-    return ChatService(db)

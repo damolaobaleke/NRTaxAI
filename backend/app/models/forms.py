@@ -91,7 +91,7 @@ class FormDownloadRequest(BaseModel):
     return_id: UUID
     form_type: FormType
     include_signature: bool = False
-    format: str = Field(default="pdf", regex="^(pdf|json)$")
+    format: str = Field(default="pdf", pattern="^(pdf|json)$")
 
 
 class FormValidation(BaseModel):

@@ -2,29 +2,49 @@
 Database connection and session management
 """
 
-import databases
+from typing import AsyncGenerator
 import structlog
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from app.core.config import settings
 
 logger = structlog.get_logger()
 
-# Global database connection
-database: databases.Database = None
+# Convert postgresql:// to postgresql+asyncpg://
+database_url = str(settings.DATABASE_URL).replace("postgresql://", "postgresql+asyncpg://")
+
+# Create async engine
+engine = create_async_engine(
+    database_url,
+    echo=False,
+    pool_pre_ping=True,
+    pool_size=5,
+    max_overflow=10,
+)
+
+# Create async session factory
+AsyncSessionLocal = async_sessionmaker(
+    engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+    autocommit=False,
+    autoflush=False,
+)
 
 
-async def get_database() -> databases.Database:
-    """Get database connection"""
-    global database
-    if database is None:
-        database = databases.Database(settings.DATABASE_URL)
-        await database.connect()
-        logger.info("Database connected")
-    return database
+async def get_database() -> AsyncGenerator[AsyncSession, None]:
+    """Get database session"""
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
 
 
 async def close_database():
     """Close database connection"""
-    global database
-    if database:
-        await database.disconnect()
-        logger.info("Database disconnected")
+    await engine.dispose()
+    logger.info("Database engine disposed")

@@ -8,7 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel
 
 from app.core.database import get_database
-from app.services.auth import get_current_user
+from app.services.auth_service import get_current_user
 from app.services.authorization_service import get_authorization_service
 from app.models.user import UserInDB
 

@@ -9,9 +9,10 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.security import HTTPBearer
 import structlog
 import uvicorn
+from sqlalchemy import text
 
 from app.core.config import settings
-from app.core.database import get_database
+from app.core.database import get_database, AsyncSessionLocal
 from app.api.v1.api import api_router
 
 # Configure structured logging
@@ -63,7 +64,7 @@ if settings.ENVIRONMENT == "production":
         allowed_hosts=settings.ALLOWED_HOSTS
     )
 
-# Include API routes
+# Include API routes with proper prefix
 app.include_router(api_router, prefix="/api/v1")
 
 @app.get("/")
@@ -77,11 +78,11 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """Detailed health check"""
+    """Detailed health check endpoint"""
     try:
         # Test database connection
-        db = await get_database()
-        await db.fetch_one("SELECT 1")
+        async with AsyncSessionLocal() as session:
+            await session.execute(text("SELECT 1"))
         
         return {
             "status": "healthy",
@@ -89,6 +90,7 @@ async def health_check():
             "version": "1.0.0"
         }
     except Exception as e:
+        print(e)
         logger.error("Health check failed", error=str(e))
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -96,6 +98,7 @@ async def health_check():
         )
 
 if __name__ == "__main__":
+    """Run the application if the main.py file is called directly"""
     uvicorn.run(
         "main:app",
         host="0.0.0.0",

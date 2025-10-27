@@ -5,15 +5,18 @@ Chat Endpoints
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List, Optional
 from uuid import UUID
+from sqlalchemy import text
+import json
 
 from app.core.database import get_database
-from app.services.auth import get_current_active_user
-from app.services.chat_service import get_chat_service
+from app.services.auth_service import get_current_active_user
+from app.services.chat_service import ChatService
 from app.models.user import UserInDB
 from app.models.chat import (
     ChatSession, ChatSessionCreate, ChatMessage, ChatMessageRequest,
     ChatMessageResponse, ChatHistory
 )
+from sqlalchemy import text
 
 router = APIRouter()
 
@@ -26,20 +29,21 @@ async def create_chat_session(
 ):
     """Create new chat session"""
     
-    session = await db.fetch_one(
-        """
-        INSERT INTO chat_sessions (user_id, tax_return_id, status)
-        VALUES (:user_id, :tax_return_id, :status)
-        RETURNING id, user_id, tax_return_id, status, created_at
-        """,
+    result = await db.execute(
+        text("""
+                INSERT INTO chat_sessions (user_id, tax_return_id, status)
+                VALUES (:user_id, :tax_return_id, :status)
+                RETURNING id, user_id, tax_return_id, status, created_at
+                """),
         {
             "user_id": current_user.id,
             "tax_return_id": session_data.tax_return_id,
             "status": session_data.status
         }
     )
+    session = result.fetchone()
     
-    return ChatSession(**session)
+    return ChatSession(**session._asdict()) if session else None
 
 
 @router.post("/message", response_model=ChatMessageResponse)
@@ -51,16 +55,17 @@ async def send_chat_message(
     """Send chat message and get AI response"""
     
     # Verify session ownership
-    session = await db.fetch_one(
-        """
-        SELECT * FROM chat_sessions 
-        WHERE id = :session_id AND user_id = :user_id
-        """,
-        {
+    result = await db.execute(
+        text("""
+            SELECT * FROM chat_sessions 
+            WHERE id = :session_id AND user_id = :user_id
+            """),
+            {   
             "session_id": message_request.session_id,
             "user_id": current_user.id
-        }
+            }
     )
+    session = result.fetchone()
     
     if not session:
         raise HTTPException(
@@ -69,7 +74,7 @@ async def send_chat_message(
         )
     
     # Get chat service and send message
-    chat_service = await get_chat_service()
+    chat_service = ChatService(db)
     
     context = {}
     if hasattr(message_request, 'return_id') and message_request.return_id:
@@ -81,6 +86,8 @@ async def send_chat_message(
         message=message_request.message,
         context=context
     )
+    print(f"{message_request.session_id}\n==message response==\n")
+    print(response)
     
     return ChatMessageResponse(
         message=response["message"],
@@ -98,17 +105,18 @@ async def get_chat_history(
     """Get chat history for a session"""
     
     # Verify session ownership
-    session = await db.fetch_one(
-        """
-        SELECT * FROM chat_sessions 
-        WHERE id = :session_id AND user_id = :user_id
-        """,
-        {
-            "session_id": session_id,
-            "user_id": current_user.id
-        }
+    result = await db.execute(
+    text("""
+            SELECT * FROM chat_sessions 
+            WHERE id = :session_id AND user_id = :user_id
+            """),
+            {
+                "session_id": session_id,
+                "user_id": current_user.id
+            }
     )
-    
+    session = result.fetchone()
+        
     if not session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -116,19 +124,32 @@ async def get_chat_history(
         )
     
     # Get all messages for the session
-    messages = await db.fetch_all(
-        """
+    result = await db.execute(
+        text("""
         SELECT id, session_id, role, content, tool_calls_json, created_at
         FROM chat_messages 
         WHERE session_id = :session_id
         ORDER BY created_at ASC
-        """,
+        """),
         {"session_id": session_id}
     )
+    messages = result.fetchall()
+    
+    # Process messages to handle tool_calls_json properly
+    processed_messages = []
+    for msg in messages:
+        msg_dict = msg._asdict()
+        # Parse tool_calls_json if it exists
+        if msg_dict.get("tool_calls_json"):
+            try:
+                msg_dict["tool_calls_json"] = json.loads(msg_dict["tool_calls_json"])
+            except (json.JSONDecodeError, TypeError):
+                msg_dict["tool_calls_json"] = None
+        processed_messages.append(ChatMessage(**msg_dict))
     
     return ChatHistory(
-        session=ChatSession(**session),
-        messages=[ChatMessage(**msg) for msg in messages]
+        session=ChatSession(**session._asdict()),
+        messages=processed_messages
     )
 
 
@@ -139,14 +160,15 @@ async def get_user_sessions(
 ):
     """Get all chat sessions for current user"""
     
-    sessions = await db.fetch_all(
-        """
+    result = await db.execute(
+        text("""
         SELECT id, user_id, tax_return_id, status, created_at
         FROM chat_sessions 
         WHERE user_id = :user_id
         ORDER BY created_at DESC
-        """,
+        """),
         {"user_id": current_user.id}
     )
+    sessions = result.fetchall()
     
-    return [ChatSession(**session) for session in sessions]
+    return [ChatSession(**session._asdict()) for session in sessions]

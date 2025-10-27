@@ -11,6 +11,7 @@ import structlog
 
 from app.core.database import get_database
 from app.utils.audit_helpers import log_operator_action, log_review_approved, log_review_rejected
+from sqlalchemy import text
 
 logger = structlog.get_logger()
 

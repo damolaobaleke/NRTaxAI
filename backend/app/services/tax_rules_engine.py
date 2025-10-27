@@ -87,7 +87,7 @@ class TaxRulesEngine:
         }
     
     def _load_treaty_exemptions(self) -> Dict[str, Dict[str, Any]]:
-        """Load tax treaty exemptions by country"""
+        """Load tax treaty exemptions by country, prevents double taxation"""
         return {
             "IN": {  # India
                 "student_exemption": {
@@ -239,11 +239,22 @@ class TaxRulesEngine:
             raise Exception(f"Failed to determine residency status: {str(e)}")
     
     async def _is_exempt_individual(self, visa_type: str, entry_date: date) -> bool:
-        """Check if individual is exempt from substantial presence test"""
+        """
+        Check if individual is exempt from SUBSTANTIAL PRESENCE TEST (days don't count)
+        
+        This is DIFFERENT from FICA exemption!
+        
+        Per IRS: https://www.irs.gov/individuals/international-taxpayers/substantial-presence-test
+        - F-1, M-1, Q-1 students: Exempt for 5 calendar years (days don't count)
+        - J-1 students: Exempt for 2 years
+        - J-1 scholars/teachers: Exempt for 2 years out of last 6
+        
+        Result: If exempt, they remain NON-RESIDENT even if physically present 183+ days
+        """
         exempt_visas = {
-            "F-1": 5,  # 5 years
+            "F-1": 5,  # 5 years - days don't count for substantial presence test
             "F-1-OPT": 5,
-            "J-1": 2,  # 2 years (students) or exempt (scholars)
+            "J-1": 2,  # 2 years for students, 2 of last 6 for scholars
             "M-1": 5,
             "Q-1": 5
         }

@@ -13,9 +13,10 @@ from app.core.config import settings
 
 logger = structlog.get_logger()
 
-
+# EncryptionService is a class that provides methods to encrypt and decrypt PII fields using KMS envelope encryption.
+# (Key Management Service) is a service provided by AWS to encrypt and decrypt data.
 class EncryptionService:
-    """KMS envelope encryption for PII fields"""
+    """KMS envelope encryption for PII (Personally Identifiable Information) fields"""
     
     def __init__(self):
         self.kms_client = boto3.client(

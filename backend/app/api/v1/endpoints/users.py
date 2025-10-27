@@ -6,11 +6,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from typing import Optional
 
 from app.core.database import get_database
-from app.services.auth import get_current_user, get_current_active_user
+from app.services.auth_service import get_current_user, get_current_active_user
 from app.models.user import (
     User, UserInDB, UserProfile, UserProfileCreate, UserProfileUpdate, 
     UserProfileWithITIN, UserUpdate
 )
+from sqlalchemy import text
 
 router = APIRouter()
 
@@ -24,6 +25,8 @@ async def get_current_user_info(
         id=current_user.id,
         email=current_user.email,
         mfa_enabled=current_user.mfa_enabled,
+        is_active=current_user.is_active,
+        email_verified=current_user.email_verified,
         created_at=current_user.created_at
     )
 
@@ -49,6 +52,8 @@ async def update_current_user(
             id=current_user.id,
             email=current_user.email,
             mfa_enabled=current_user.mfa_enabled,
+            is_active=current_user.is_active,
+            email_verified=current_user.email_verified,
             created_at=current_user.created_at
         )
     
@@ -57,7 +62,7 @@ async def update_current_user(
         UPDATE users 
         SET {', '.join(update_fields)}
         WHERE id = :user_id
-        RETURNING id, email, password_hash, mfa_enabled, created_at
+        RETURNING id, email, password_hash, mfa_enabled, is_active, email_verified, created_at
     """
     
     updated_user = await db.fetch_one(query, update_values)
@@ -66,6 +71,8 @@ async def update_current_user(
         id=updated_user["id"],
         email=updated_user["email"],
         mfa_enabled=updated_user["mfa_enabled"],
+        is_active=updated_user["is_active"],
+        email_verified=updated_user["email_verified"],
         created_at=updated_user["created_at"]
     )
 
@@ -77,8 +84,8 @@ async def get_current_user_profile(
 ):
     """Get current user profile with decrypted PII"""
     
-    profile = await db.fetch_one(
-        """
+    result = await db.execute(
+text("""
         SELECT 
             up.user_id,
             up.first_name,
@@ -94,9 +101,10 @@ async def get_current_user_profile(
             up.updated_at
         FROM user_profiles up
         WHERE up.user_id = :user_id
-        """,
+        """),
         {"user_id": current_user.id}
     )
+    profile = result.fetchone()
     
     if not profile:
         raise HTTPException(
@@ -106,7 +114,10 @@ async def get_current_user_profile(
     
     # TODO: Decrypt ITIN using KMS service
     # For now, return as-is (will be encrypted in production)
-    decrypted_itin = profile["itin"]
+    if profile["itin"]:
+        decrypted_itin = profile["itin"]
+    else:
+        decrypted_itin = None
     
     return UserProfileWithITIN(
         user_id=profile["user_id"],
@@ -133,10 +144,11 @@ async def create_user_profile(
     """Create user profile"""
     
     # Check if profile already exists
-    existing_profile = await db.fetch_one(
-        "SELECT user_id FROM user_profiles WHERE user_id = :user_id",
+    result = await db.execute(
+        text("SELECT user_id FROM user_profiles WHERE user_id = :user_id"),
         {"user_id": current_user.id}
     )
+    existing_profile = result.fetchone()
     
     if existing_profile:
         raise HTTPException(
@@ -144,12 +156,12 @@ async def create_user_profile(
             detail="Profile already exists"
         )
     
-    # TODO: Encrypt ITIN using KMS service
+    # TODO: Encrypt ITIN using KMS service if it exists
     # For now, store as-is (will be encrypted in production)
     encrypted_itin = profile_data.itin
     
-    profile = await db.fetch_one(
-        """
+    result = await db.execute(
+text("""
         INSERT INTO user_profiles (
             user_id, first_name, last_name, dob, residency_country,
             visa_class, itin, ssn_last4, address_json, phone
@@ -160,8 +172,8 @@ async def create_user_profile(
         )
         RETURNING user_id, first_name, last_name, dob, residency_country,
                   visa_class, ssn_last4, address_json, phone, created_at, updated_at
-        """,
-        {
+        """),
+{
             "user_id": current_user.id,
             "first_name": profile_data.first_name,
             "last_name": profile_data.last_name,
@@ -174,8 +186,9 @@ async def create_user_profile(
             "phone": profile_data.phone
         }
     )
+    profile = result.fetchone()
     
-    return UserProfile(**profile)
+    return UserProfile(**profile._asdict())
 
 
 @router.put("/me/profile", response_model=UserProfile)
@@ -186,6 +199,7 @@ async def update_user_profile(
 ):
     """Update user profile"""
     
+    print(profile_data.model_dump())
     # Build update query dynamically
     update_fields = ["updated_at = CURRENT_TIMESTAMP"]
     update_values = {"user_id": current_user.id}
@@ -244,4 +258,4 @@ async def update_user_profile(
             detail="Profile not found"
         )
     
-    return UserProfile(**updated_profile)
+    return UserProfile(**updated_profile._asdict())
