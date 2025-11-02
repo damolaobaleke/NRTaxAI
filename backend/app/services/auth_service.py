@@ -36,7 +36,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 
 def get_password_hash(password: str) -> str:
-    """Hash a password"""
+    """Hash a password using pbkdf2_sha256"""
     # Using pbkdf2_sha256 which doesn't have the 72-byte limit of bcrypt
     return pwd_context.hash(password)
 
@@ -161,7 +161,7 @@ class AuthService:
         return UserInDB(**user._asdict())
     
     async def create_user(self, email: str, password: str, mfa_enabled: bool = False) -> UserInDB:
-        """Create new user"""
+        """Create a new user in the database"""
         password_hash = get_password_hash(password)
         
         result = await self.db.execute(

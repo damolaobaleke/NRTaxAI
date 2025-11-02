@@ -28,7 +28,7 @@ import {
   Info
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
-import { taxReturnService, chatService } from '../services/authService';
+import { taxReturnService, chatService } from '../services/apiService';
 
 const Dashboard = () => {
   const navigate = useNavigate();
