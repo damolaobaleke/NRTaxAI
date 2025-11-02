@@ -103,7 +103,7 @@ class DocumentService:
         user_id: str
     ) -> Dict[str, Any]:
         """
-        Confirm document upload and initiate processing
+        Confirm document upload by checking if record exists in the db and initiate processing of scanning for malware
         
         Args:
             document_id: Document ID
@@ -113,7 +113,7 @@ class DocumentService:
             Upload confirmation result
         """
         try:
-            # Get document record
+            # Get document record from db to check if it exists and confirm upload
             document = await self.db.fetch_one(
                 """
                 SELECT * FROM documents 
@@ -144,7 +144,7 @@ class DocumentService:
                 {"document_id": document_id}
             )
             
-            # Initiate AV scan
+            # Initiate Antivirus scanning on the file
             scan_result = await av_scanner.scan_file(document["s3_key"])
             
             # Update document with scan result
@@ -210,6 +210,7 @@ class DocumentService:
         except Exception as e:
             logger.error("Upload confirmation failed", error=str(e), document_id=document_id)
             raise Exception(f"Failed to confirm upload: {str(e)}")
+    
     
     async def get_document(
         self,

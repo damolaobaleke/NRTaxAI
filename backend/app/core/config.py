@@ -45,8 +45,8 @@ class Settings(BaseSettings):
     AWS_SECRET_ACCESS_KEY: Optional[str] = None
     
     # S3
-    S3_BUCKET_UPLOADS: str = "nrtaxai-uploads"
-    S3_BUCKET_PDFS: str = "nrtaxai-pdfs"
+    S3_BUCKET_UPLOADS: str = "nrtaxai-uploads" # Tax form document uploads (W2, 1099-INT, 1099-NEC, 1098-T, 1042-S, 1099-DIV, 1099-B, 1099-MISC)
+    S3_BUCKET_PDFS: str = "nrtaxai-pdfs" # Tax forms generated PDFs (1040-NR, 1040-V, 8843, W-8BEN, 8879(e-file))
     S3_BUCKET_EXTRACTS: str = "nrtaxai-extracts"
     
     # KMS

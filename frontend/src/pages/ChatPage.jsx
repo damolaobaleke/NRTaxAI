@@ -40,7 +40,7 @@ import {
   Description
 } from '@mui/icons-material';
 import ReactMarkdown from 'react-markdown';
-import { chatService } from '../services/authService';
+import { chatService, documentService } from '../services/apiService';
 import { useAuth } from '../contexts/AuthContext';
 
 const ChatPage = () => {
@@ -264,53 +264,151 @@ const ChatPage = () => {
     fileInputRef.current?.click();
   };
 
+  // Helper function to detect document type from filename
+  const detectDocumentType = (filename) => {
+    const lowerName = filename.toLowerCase();
+    
+    // Check for common document patterns
+    if (lowerName.includes('w2') || lowerName.includes('w-2')) return 'W2';
+    if (lowerName.includes('1099-int') || lowerName.includes('1099int')) return '1099INT';
+    if (lowerName.includes('1099-nec') || lowerName.includes('1099nec')) return '1099NEC';
+    if (lowerName.includes('1099-div') || lowerName.includes('1099div')) return '1099DIV';
+    if (lowerName.includes('1099-misc') || lowerName.includes('1099misc')) return '1099MISC';
+    if (lowerName.includes('1099-b') || lowerName.includes('1099b')) return '1099B';
+    if (lowerName.includes('1098-t') || lowerName.includes('1098t')) return '1098T';
+    if (lowerName.includes('1042-s') || lowerName.includes('1042s')) return '1042S';
+    
+    // Default to W2 if cannot detect
+    return 'W2';
+  };
+
   const handleFileChange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
+    // Validate file type
+    const allowedTypes = ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg'];
+    if (!allowedTypes.includes(file.type)) {
+      setError('Please select a PDF, PNG, or JPEG file');
+      e.target.value = '';
+      return;
+    }
+
+    // Validate file size (10MB limit)
+    const maxSize = 10 * 1024 * 1024; // 10MB
+    if (file.size > maxSize) {
+      setError('File size must be less than 10MB');
+      e.target.value = '';
+      return;
+    }
+
     // Create a new session if none exists
     if (!currentSession) {
-      await createNewSession();
+      await createNewSessionSeamless();
       // Wait a bit for session to be created, then try again
       setTimeout(() => handleFileChange(e), 1000);
       return;
     }
 
+    // Detect document type from filename
+    const docType = detectDocumentType(file.name);
+    
+    // Create a message showing file upload
+    const fileMessage = {
+      id: Date.now(),
+      role: 'user',
+      content: `📎 Uploading file: ${file.name}`,
+      timestamp: new Date(),
+      status: 'sending'
+    };
+    
+    setMessages(prev => [...prev, fileMessage]);
+
     try {
       setIsLoading(true);
+      setError(null);
       
-      // Create a message showing file upload
-      const fileMessage = {
-        id: Date.now(),
-        role: 'user',
-        content: `📎 Uploaded file: ${file.name}`,
+      // Request upload URL from backend
+      const uploadData = await documentService.requestUploadUrl(docType, currentSession.return_id || null);
+      console.log("uploadData\n", uploadData);
+
+      // Upload file to S3 using presigned POST URL
+      const formData = new FormData();
+      
+      // Add the fields from the presigned POST
+      if (uploadData.fields) {
+        console.log("uploadData fields\n", uploadData.fields);
+        Object.entries(uploadData.fields).forEach(([key, value]) => {
+          formData.append(key, value);
+        });
+      }
+      
+      // Add the file last
+      formData.append('file', file);
+      console.log("formData\n", formData);
+
+      // Upload with progress tracking
+      const xhr = new XMLHttpRequest();
+      
+      const uploadPromise = new Promise((resolve, reject) => {
+        xhr.onload = () => {
+          if (xhr.status === 204 || xhr.status === 200) {
+            resolve();
+          } else {
+            reject(new Error(`Upload failed with status ${xhr.status}`));
+          }
+        };
+        xhr.onerror = () => reject(new Error('Upload failed'));
+        xhr.open('POST', uploadData.upload_url);
+        xhr.send(formData);
+      });
+
+      await uploadPromise;
+
+      // Confirm upload and initiate processing of scanning for malware
+      const confirmResult = await documentService.confirmUpload(uploadData.document_id);
+      
+      // Update message to show success
+      setMessages(prev => 
+        prev.map(msg => 
+          msg.id === fileMessage.id 
+            ? { 
+                ...msg, 
+                status: 'sent',
+                content: `📎 Uploaded file: ${file.name} (${docType}) - Status: ${confirmResult.status}`
+              }
+            : msg
+        )
+      );
+
+      // Add a helpful message from the assistant
+      const assistantMessage = {
+        id: Date.now() + 1,
+        role: 'assistant',
+        content: `✅ File uploaded successfully! The document has been scanned and is ${confirmResult.status === 'clean' ? 'ready for processing' : 'quarantined'}. ${confirmResult.status === 'clean' ? 'Would you like me to help you extract information from it?' : ''}`,
         timestamp: new Date(),
-        status: 'sending'
+        status: 'received'
       };
       
-      setMessages(prev => [...prev, fileMessage]);
-      
-      // Here you would typically upload the file to your backend
-      // For now, we'll just simulate success
-      setTimeout(() => {
-        setMessages(prev => 
-          prev.map(msg => 
-            msg.id === fileMessage.id 
-              ? { ...msg, status: 'sent' }
-              : msg
-          )
-        );
-        setIsLoading(false);
-      }, 1000);
+      setMessages(prev => [...prev, assistantMessage]);
       
     } catch (error) {
       console.error('File upload error:', error);
-      setError('Failed to upload file');
+      setError(`Failed to upload file: ${error.message || error}`);
+      
+      // Update message to show failure
+      setMessages(prev => 
+        prev.map(msg => 
+          msg.id === fileMessage.id 
+            ? { ...msg, status: 'failed', content: `❌ Failed to upload: ${file.name}` }
+            : msg
+        )
+      );
+    } finally {
       setIsLoading(false);
+      // Reset file input
+      e.target.value = '';
     }
-    
-    // Reset file input
-    e.target.value = '';
   };
 
   const formatTimestamp = (timestamp) => {

@@ -186,10 +186,13 @@ export const taxReturnService = {
 
 export const documentService = {
   async requestUploadUrl(docType, returnId = null) {
-    const response = await apiClient.post('/documents/upload', {
-      doc_type: docType,
-      return_id: returnId
-    });
+    // FastAPI expects query parameters for simple POST params
+    const params = new URLSearchParams();
+    params.append('doc_type', docType);
+    if (returnId) {
+      params.append('return_id', returnId);
+    }
+    const response = await apiClient.post(`/documents/upload?${params.toString()}`);
     return response.data;
   },
 

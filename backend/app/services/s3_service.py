@@ -50,7 +50,8 @@ class S3Service:
         """
         try:
             # Generate unique file key
-            timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            #
             file_key = f"uploads/{user_id}/{document_type}_{timestamp}.{file_extension}"
             
             # Determine content type
@@ -77,13 +78,15 @@ class S3Service:
                 Conditions=conditions,
                 ExpiresIn=expires_in
             )
+
+            logger.info("Generated presigned POST data", post_data)
             
             return {
                 "upload_url": post_data["url"],
                 "fields": post_data["fields"],
                 "file_key": file_key,
                 "content_type": content_type,
-                "expires_at": datetime.utcnow() + timedelta(seconds=expires_in)
+                "expires_at": datetime.now() + timedelta(seconds=expires_in)
             }
             
         except NoCredentialsError:
@@ -124,7 +127,7 @@ class S3Service:
                 'Key': file_key,
                 'Body': file_content,
                 'Metadata': {
-                    'uploaded_at': datetime.utcnow().isoformat(),
+                    'uploaded_at': datetime.now().isoformat(),
                     'file_hash': file_hash,
                     **(metadata or {})
                 }
@@ -140,7 +143,7 @@ class S3Service:
                 "etag": response.get('ETag', '').strip('"'),
                 "file_hash": file_hash,
                 "size_bytes": len(file_content),
-                "upload_time": datetime.utcnow()
+                "upload_time": datetime.now()
             }
             
         except ClientError as e:
