@@ -347,7 +347,8 @@ const ChatPage = () => {
       formData.append('file', file);
       console.log("formData\n", formData);
 
-      // Upload with progress tracking
+      // Upload with progress tracking 
+      // TODO: Use axios to upload the file to the presigned POST URL
       const xhr = new XMLHttpRequest();
       
       const uploadPromise = new Promise((resolve, reject) => {
