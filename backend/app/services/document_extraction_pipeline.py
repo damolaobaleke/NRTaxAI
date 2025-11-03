@@ -3,6 +3,7 @@ Document Extraction Pipeline Service
 """
 
 import json
+import re
 import uuid
 from datetime import datetime
 from typing import Dict, Any, Optional, List
@@ -45,28 +46,39 @@ class ExtractionPipeline:
                        user_id=user_id)
             
             # Get document record
-            document = await self.db.fetch_one(
-                """
+            result = await self.db.execute(
+                text("""
                 SELECT * FROM documents 
                 WHERE id = :document_id AND user_id = :user_id
-                """,
+                """),
                 {"document_id": document_id, "user_id": user_id}
             )
+            document_row = result.fetchone()
             
-            if not document:
+            if not document_row:
                 raise ValueError("Document not found or access denied")
+            
+            # Convert to dict if needed
+            if hasattr(document_row, '_asdict'):
+                document = document_row._asdict()
+            else:
+                # Fallback for tuples
+                field_names = ['id', 'user_id', 'return_id', 's3_key', 'doc_type', 'source', 
+                              'status', 'extracted_json', 'validation_json', 'created_at', 
+                              'updated_at', 'textract_job_id']
+                document = dict(zip(field_names, document_row))
             
             if document["status"] != "clean":
                 raise ValueError(f"Document status is {document['status']}, cannot extract")
             
             # Update document status
             await self.db.execute(
-                """
+                text("""
                 UPDATE documents 
                 SET status = 'processing',
                     textract_job_id = :job_id
                 WHERE id = :document_id
-                """,
+                """),
                 {
                     "document_id": document_id,
                     "job_id": None  # Will be updated when Textract job starts
@@ -81,11 +93,11 @@ class ExtractionPipeline:
             
             # Update document with job ID
             await self.db.execute(
-                """
+                text("""
                 UPDATE documents 
                 SET textract_job_id = :job_id
                 WHERE id = :document_id
-                """,
+                """),
                 {
                     "document_id": document_id,
                     "job_id": textract_result["job_id"]
@@ -110,11 +122,11 @@ class ExtractionPipeline:
             
             # Update document status to failed
             await self.db.execute(
-                """
+                text("""
                 UPDATE documents 
                 SET status = 'failed'
                 WHERE id = :document_id
-                """,
+                """),
                 {"document_id": document_id}
             )
             
@@ -141,16 +153,27 @@ class ExtractionPipeline:
                        user_id=user_id)
             
             # Get document record
-            document = await self.db.fetch_one(
-                """
+            result = await self.db.execute(
+                text("""
                 SELECT * FROM documents 
                 WHERE id = :document_id AND user_id = :user_id
-                """,
+                """),
                 {"document_id": document_id, "user_id": user_id}
             )
+            document_row = result.fetchone()
             
-            if not document:
+            if not document_row:
                 raise ValueError("Document not found or access denied")
+            
+            # Convert to dict if needed
+            if hasattr(document_row, '_asdict'):
+                document = document_row._asdict()
+            else:
+                # Fallback for tuples
+                field_names = ['id', 'user_id', 'return_id', 's3_key', 'doc_type', 'source', 
+                              'status', 'extracted_json', 'validation_json', 'created_at', 
+                              'updated_at', 'textract_job_id']
+                document = dict(zip(field_names, document_row))
             
             if not document["textract_job_id"]:
                 raise ValueError("No Textract job ID found")
@@ -170,12 +193,12 @@ class ExtractionPipeline:
             if textract_result["status"] == "FAILED":
                 # Update document status to failed
                 await self.db.execute(
-                    """
+                    text("""
                     UPDATE documents 
                     SET status = 'failed',
                         extracted_json = :error_data
                     WHERE id = :document_id
-                    """,
+                    """),
                     {
                         "document_id": document_id,
                         "error_data": json.dumps({
@@ -202,13 +225,13 @@ class ExtractionPipeline:
                 
                 # Update document with extracted data
                 await self.db.execute(
-                    """
+                    text("""
                     UPDATE documents 
                     SET status = :status,
                         extracted_json = :extracted_data,
                         validation_json = :validation_data
                     WHERE id = :document_id
-                    """,
+                    """),
                     {
                         "document_id": document_id,
                         "status": "extracted" if validation_results["overall_valid"] else "validation_failed",
@@ -244,11 +267,11 @@ class ExtractionPipeline:
             
             # Update document status to failed
             await self.db.execute(
-                """
+                text("""
                 UPDATE documents 
                 SET status = 'failed'
                 WHERE id = :document_id
-                """,
+                """),
                 {"document_id": document_id}
             )
             
@@ -271,16 +294,27 @@ class ExtractionPipeline:
         """
         try:
             # Get document record
-            document = await self.db.fetch_one(
-                """
+            result = await self.db.execute(
+                text("""
                 SELECT * FROM documents 
                 WHERE id = :document_id AND user_id = :user_id
-                """,
+                """),
                 {"document_id": document_id, "user_id": user_id}
             )
+            document_row = result.fetchone()
             
-            if not document:
+            if not document_row:
                 raise ValueError("Document not found or access denied")
+            
+            # Convert to dict if needed
+            if hasattr(document_row, '_asdict'):
+                document = document_row._asdict()
+            else:
+                # Fallback for tuples
+                field_names = ['id', 'user_id', 'return_id', 's3_key', 'doc_type', 'source', 
+                              'status', 'extracted_json', 'validation_json', 'created_at', 
+                              'updated_at', 'textract_job_id']
+                document = dict(zip(field_names, document_row))
             
             status_info = {
                 "document_id": document_id,
@@ -301,14 +335,24 @@ class ExtractionPipeline:
                 if textract_result["status"] == "SUCCEEDED":
                     await self.process_extraction_result(document_id, user_id)
                     # Refresh document status
-                    updated_document = await self.db.fetch_one(
-                        """
+                    result = await self.db.execute(
+                        text("""
                         SELECT status, extracted_json, validation_json 
                         FROM documents 
                         WHERE id = :document_id
-                        """,
+                        """),
                         {"document_id": document_id}
                     )
+                    updated_document_row = result.fetchone()
+                    
+                    # Convert to dict if needed
+                    if hasattr(updated_document_row, '_asdict'):
+                        updated_document = updated_document_row._asdict()
+                    else:
+                        # Fallback for tuples
+                        field_names = ['status', 'extracted_json', 'validation_json']
+                        updated_document = dict(zip(field_names, updated_document_row))
+                    
                     status_info["status"] = updated_document["status"]
                 
                 elif textract_result["status"] == "FAILED":

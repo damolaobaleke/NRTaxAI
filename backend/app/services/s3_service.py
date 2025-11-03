@@ -93,6 +93,7 @@ class S3Service:
             logger.error("AWS credentials not configured")
             raise Exception("AWS credentials not configured")
         except ClientError as e:
+            print(e)
             logger.error("S3 error generating presigned URL", error=str(e))
             raise Exception(f"Failed to generate upload URL: {str(e)}")
     

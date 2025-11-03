@@ -58,8 +58,8 @@ class DocumentService:
             )
             
             # Create document record in database
-            document_id = await self.db.fetch_one(
-                """
+            result = await self.db.execute(
+                text("""
                 INSERT INTO documents (
                     id, user_id, return_id, s3_key, doc_type, status
                 )
@@ -67,7 +67,7 @@ class DocumentService:
                     :id, :user_id, :return_id, :s3_key, :doc_type, 'uploading'
                 )
                 RETURNING id
-                """,
+                """),
                 {
                     "id": str(uuid.uuid4()),
                     "user_id": user_id,
@@ -76,15 +76,23 @@ class DocumentService:
                     "doc_type": document_type
                 }
             )
+            document_id_row = result.fetchone()
+            
+            # Convert to dict if needed
+            if hasattr(document_id_row, '_asdict'):
+                document_id_dict = document_id_row._asdict()
+            else:
+                # Fallback for tuples
+                document_id_dict = {'id': document_id_row[0]}
             
             # Log upload request
             logger.info("Upload URL generated", 
                        user_id=user_id, 
                        document_type=document_type,
-                       document_id=document_id["id"])
+                       document_id=document_id_dict["id"])
             
             return {
-                "document_id": document_id["id"],
+                "document_id": document_id_dict["id"],
                 "upload_url": upload_data["upload_url"],
                 "fields": upload_data["fields"],
                 "file_key": upload_data["file_key"],
@@ -94,7 +102,14 @@ class DocumentService:
             }
             
         except Exception as e:
-            logger.error("Upload URL generation failed", error=str(e), user_id=user_id)
+            # print(e)
+            logger.error(
+                "Upload URL generation failed", 
+                error=str(e), 
+                user_id=user_id, 
+                function="request_upload_url", 
+                class_name="DocumentService",
+            )
             raise Exception(f"Failed to generate upload URL: {str(e)}")
     
     async def confirm_upload(
@@ -114,16 +129,27 @@ class DocumentService:
         """
         try:
             # Get document record from db to check if it exists and confirm upload
-            document = await self.db.fetch_one(
-                """
+            result = await self.db.execute(
+                text("""
                 SELECT * FROM documents 
                 WHERE id = :document_id AND user_id = :user_id
-                """,
+                """),
                 {"document_id": document_id, "user_id": user_id}
             )
+            document_row = result.fetchone()
             
-            if not document:
+            if not document_row:
                 raise ValueError("Document not found or access denied")
+            
+            # Convert to dict if needed
+            if hasattr(document_row, '_asdict'):
+                document = document_row._asdict()
+            else:
+                # Fallback for tuples
+                field_names = ['id', 'user_id', 'return_id', 's3_key', 'doc_type', 'source', 
+                              'status', 'extracted_json', 'validation_json', 'created_at', 
+                              'updated_at', 'textract_job_id']
+                document = dict(zip(field_names, document_row))
             
             # Check if file exists in S3
             try:
@@ -134,13 +160,13 @@ class DocumentService:
             
             # Update document status
             await self.db.execute(
-                """
+                text("""
                 UPDATE documents 
                 SET status = 'uploaded', 
                     source = 'user_upload',
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = :document_id
-                """,
+                """),
                 {"document_id": document_id}
             )
             
@@ -149,12 +175,12 @@ class DocumentService:
             
             # Update document with scan result
             await self.db.execute(
-                """
+                text("""
                 UPDATE documents 
                 SET status = :status,
                     validation_json = :validation_json
                 WHERE id = :document_id
-                """,
+                """),
                 {
                     "document_id": document_id,
                     "status": "clean" if scan_result.get("clean") else "quarantined",
@@ -173,12 +199,12 @@ class DocumentService:
                 )
                 
                 await self.db.execute(
-                    """
+                    text("""
                     UPDATE documents 
                     SET status = 'quarantined',
                         validation_json = :validation_json
                     WHERE id = :document_id
-                    """,
+                    """),
                     {
                         "document_id": document_id,
                         "validation_json": json.dumps({
@@ -228,13 +254,14 @@ class DocumentService:
             Document information
         """
         try:
-            document = await self.db.fetch_one(
-                """
+            result = await self.db.execute(
+                text("""
                 SELECT * FROM documents 
                 WHERE id = :document_id AND user_id = :user_id
-                """,
+                """),
                 {"document_id": document_id, "user_id": user_id}
             )
+            document = result.fetchone()
             
             if not document:
                 raise ValueError("Document not found or access denied")
@@ -275,6 +302,7 @@ class DocumentService:
         self,
         user_id: str,
         return_id: Optional[str] = None,
+        status: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         List documents for user
@@ -305,10 +333,21 @@ class DocumentService:
             
             query += " ORDER BY created_at DESC"
             
-            documents = await self.db.fetch_all(query, params)
+            db_result = await self.db.execute(text(query), params)
+            documents = db_result.fetchall()
             
             result = []
-            for doc in documents:
+            for doc_row in documents:
+                # Convert to dict if needed
+                if hasattr(doc_row, '_asdict'):
+                    doc = doc_row._asdict()
+                else:
+                    # Fallback for tuples
+                    field_names = ['id', 'user_id', 'return_id', 's3_key', 'doc_type', 'source', 
+                                  'status', 'extracted_json', 'validation_json', 'created_at', 
+                                  'updated_at', 'textract_job_id']
+                    doc = dict(zip(field_names, doc_row))
+                
                 # Parse validation JSON
                 validation_data = {}
                 if doc.get("validation_json"):
@@ -352,23 +391,34 @@ class DocumentService:
         """
         try:
             # Get document record
-            document = await self.db.fetch_one(
-                """
+            result = await self.db.execute(
+                text("""
                 SELECT * FROM documents 
                 WHERE id = :document_id AND user_id = :user_id
-                """,
+                """),
                 {"document_id": document_id, "user_id": user_id}
             )
+            document_row = result.fetchone()
             
-            if not document:
+            if not document_row:
                 raise ValueError("Document not found or access denied")
+            
+            # Convert to dict if needed
+            if hasattr(document_row, '_asdict'):
+                document = document_row._asdict()
+            else:
+                # Fallback for tuples
+                field_names = ['id', 'user_id', 'return_id', 's3_key', 'doc_type', 'source', 
+                              'status', 'extracted_json', 'validation_json', 'created_at', 
+                              'updated_at', 'textract_job_id']
+                document = dict(zip(field_names, document_row))
             
             # Delete from S3
             await s3_service.delete_file(document["s3_key"])
             
             # Delete from database
             await self.db.execute(
-                "DELETE FROM documents WHERE id = :document_id",
+                text("DELETE FROM documents WHERE id = :document_id"),
                 {"document_id": document_id}
             )
             
@@ -403,16 +453,27 @@ class DocumentService:
         """
         try:
             # Get document record
-            document = await self.db.fetch_one(
-                """
+            result = await self.db.execute(
+                text("""
                 SELECT * FROM documents 
                 WHERE id = :document_id AND user_id = :user_id
-                """,
+                """),
                 {"document_id": document_id, "user_id": user_id}
             )
+            document_row = result.fetchone()
             
-            if not document:
+            if not document_row:
                 raise ValueError("Document not found or access denied")
+            
+            # Convert to dict if needed
+            if hasattr(document_row, '_asdict'):
+                document = document_row._asdict()
+            else:
+                # Fallback for tuples
+                field_names = ['id', 'user_id', 'return_id', 's3_key', 'doc_type', 'source', 
+                              'status', 'extracted_json', 'validation_json', 'created_at', 
+                              'updated_at', 'textract_job_id']
+                document = dict(zip(field_names, document_row))
             
             # Check if document is clean
             if document["status"] == "quarantined":
