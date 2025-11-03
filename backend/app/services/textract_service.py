@@ -19,13 +19,17 @@ class TextractService:
     """AWS Textract service for document OCR and text extraction"""
     
     def __init__(self):
-        self.textract_client = boto3.client(
-            'textract',
-            region_name=settings.AWS_REGION,
-            aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-            aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY
-        )
-        self.s3_client = boto3.client('s3')
+        # Build credentials dict, only include session_token if present
+        credentials = {
+            'region_name': settings.AWS_REGION,
+            'aws_access_key_id': settings.AWS_ACCESS_KEY_ID,
+            'aws_secret_access_key': settings.AWS_SECRET_ACCESS_KEY
+        }
+        if settings.AWS_SESSION_TOKEN:
+            credentials['aws_session_token'] = settings.AWS_SESSION_TOKEN
+        
+        self.textract_client = boto3.client('textract', **credentials)
+        self.s3_client = boto3.client('s3', **credentials)
         self.s3_bucket = settings.S3_BUCKET_UPLOADS
         
         # Document type to Textract feature mapping

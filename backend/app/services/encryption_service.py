@@ -19,12 +19,16 @@ class EncryptionService:
     """KMS envelope encryption for PII (Personally Identifiable Information) fields"""
     
     def __init__(self):
-        self.kms_client = boto3.client(
-            'kms',
-            region_name=settings.AWS_REGION,
-            aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-            aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY
-        )
+        # Build credentials dict, only include session_token if present
+        credentials = {
+            'region_name': settings.AWS_REGION,
+            'aws_access_key_id': settings.AWS_ACCESS_KEY_ID,
+            'aws_secret_access_key': settings.AWS_SECRET_ACCESS_KEY
+        }
+        if settings.AWS_SESSION_TOKEN:
+            credentials['aws_session_token'] = settings.AWS_SESSION_TOKEN
+        
+        self.kms_client = boto3.client('kms', **credentials)
         self.kms_key_id = settings.KMS_KEY_ID
     
     async def encrypt_field(self, plaintext: str) -> str:

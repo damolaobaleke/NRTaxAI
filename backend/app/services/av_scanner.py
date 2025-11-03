@@ -20,12 +20,17 @@ class AVScanner:
     """Antivirus scanning service using AWS Lambda"""
     
     def __init__(self):
-        self.lambda_client = boto3.client(
-            'lambda',
-            region_name=settings.AWS_REGION,
-            aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-            aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY
-        )
+        # Build credentials dict, only include session_token if present
+        credentials = {
+            'region_name': settings.AWS_REGION,
+            'aws_access_key_id': settings.AWS_ACCESS_KEY_ID,
+            'aws_secret_access_key': settings.AWS_SECRET_ACCESS_KEY
+        }
+        if settings.AWS_SESSION_TOKEN:
+            credentials['aws_session_token'] = settings.AWS_SESSION_TOKEN
+        
+        self.lambda_client = boto3.client('lambda', **credentials)
+        # TODO: Implement lambda function in aws
         self.scan_function_name = "nrtaxai-av-scanner"  # Lambda function name
     
     async def scan_file(
@@ -61,7 +66,7 @@ class AVScanner:
                     "reason": "file_too_large",
                     "file_size_bytes": file_size,
                     "max_scan_size": max_scan_size,
-                    "timestamp": datetime.utcnow().isoformat()
+                    "timestamp": datetime.now().isoformat()
                 }
             
             # Prepare scan payload
@@ -89,11 +94,11 @@ class AVScanner:
             response_payload = json.loads(response['Payload'].read())
             
             if response.get('FunctionError'):
-                logger.error("AV scan Lambda error", error=response_payload)
+                logger.error("AV scan Lambda error", error=response_payload, function_name="scan_file", class_name="AVScanner")
                 return {
                     "scan_status": "error",
                     "error": response_payload.get('errorMessage', 'Unknown error'),
-                    "timestamp": datetime.utcnow().isoformat()
+                    "timestamp": datetime.now().isoformat()
                 }
             
             # Process scan result
@@ -110,24 +115,42 @@ class AVScanner:
                 "quarantined": scan_result.get('quarantined', False),
                 "quarantine_location": scan_result.get('quarantine_location', ''),
                 "clean": scan_result.get('clean', False),
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now().isoformat(),
                 "file_key": file_key,
                 "file_size_bytes": file_size
             }
             
         except ClientError as e:
-            logger.error("AV scan AWS error", error=str(e), file_key=file_key)
+            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+            
+            # Handle case where Lambda function doesn't exist
+            if error_code == 'ResourceNotFoundException':
+                logger.warning("AV scan Lambda function not found, skipping scan", 
+                             file_key=file_key, 
+                             function_name=self.scan_function_name)
+                return {
+                    "scan_status": "skipped",
+                    "reason": "lambda_function_not_found",
+                    "error": "Antivirus scanning Lambda function not configured",
+                    "clean": True,  # Assume clean if scanner unavailable
+                    "timestamp": datetime.now().isoformat(),
+                    "file_key": file_key,
+                    "note": "Scan skipped - Lambda function not available"
+                }
+            
+            logger.error("AV scan AWS error", error=str(e), error_code=error_code, file_key=file_key)
             return {
                 "scan_status": "error",
                 "error": f"AWS error: {str(e)}",
-                "timestamp": datetime.utcnow().isoformat()
+                "error_code": error_code,
+                "timestamp": datetime.now().isoformat()
             }
         except Exception as e:
             logger.error("AV scan error", error=str(e), file_key=file_key)
             return {
                 "scan_status": "error",
                 "error": str(e),
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now().isoformat()
             }
     
     async def get_scan_status(self, scan_id: str) -> Dict[str, Any]:

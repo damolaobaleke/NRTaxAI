@@ -207,13 +207,16 @@ const ChatPage = () => {
       status: 'sending'
     };
 
+    // Store message content before clearing input
+    const messageToSend = inputMessage;
+    
     setMessages(prev => [...prev, userMessage]);
     setInputMessage('');
     setIsLoading(true);
     setIsTyping(true);
 
     try {
-      const response = await chatService.sendMessage(currentSession.id, inputMessage);
+      const response = await chatService.sendMessage(currentSession.id, messageToSend);
       
       // Update user message status
       setMessages(prev => 
@@ -228,7 +231,7 @@ const ChatPage = () => {
       const aiMessage = {
         id: Date.now() + 1,
         role: 'assistant',
-        content: response.message,
+        content: response.message || response.content || 'I received your message.',
         timestamp: new Date(),
         toolCalls: response.tool_calls || [],
         status: 'received'
@@ -260,10 +263,6 @@ const ChatPage = () => {
     }
   };
 
-  const handleFileUpload = () => {
-    fileInputRef.current?.click();
-  };
-
   // Helper function to detect document type from filename
   const detectDocumentType = (filename) => {
     const lowerName = filename.toLowerCase();
@@ -280,6 +279,124 @@ const ChatPage = () => {
     
     // Default to W2 if cannot detect
     return 'W2';
+  };
+
+  const handleFileUpload = () => {
+    fileInputRef.current?.click();
+  };
+
+  const processFileUpload = async (file, session) => {
+    // Create a message showing file upload
+    const fileMessage = {
+      id: Date.now(),
+      role: 'user',
+      content: `📎 Uploading file: ${file.name}`,
+      timestamp: new Date(),
+      status: 'sending'
+    };
+    
+    setMessages(prev => [...prev, fileMessage]);
+
+    let uploadResult = null;
+    let confirmResult = null;
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      // Step 1: Detect document type from filename
+      const docType = detectDocumentType(file.name);
+      
+      // Step 2: Request upload URL from backend (creates document record)
+      const uploadData = await documentService.requestUploadUrl(docType, session?.return_id || null);
+
+      // Step 3: Upload file directly to S3 no presigned POST URL (avoids CORS issues)
+      uploadResult = await documentService.uploadFile(uploadData.document_id, file);
+      console.log("uploadResult", uploadResult);
+
+      // Step 4: If upload is successful, confirm upload and initiate Antivirus or malware scan
+      if(uploadResult && uploadResult.status === 'uploaded') {
+        // Update message to show success
+        setMessages(prev => 
+          prev.map(msg => 
+            msg.id === fileMessage.id 
+              ? { 
+                  ...msg, 
+                  status: 'sent',
+                  content: `📎 Uploaded file: ${file.name} (${docType}) successfully`
+                }
+              : msg
+          )
+        );
+        
+        // "Now scanning for malware..." message as string (not JSX)
+        const scanningMessage = {
+          id: Date.now() + 2,
+          role: 'assistant',
+          content: '🦠 Scanning file for malware/antivirus...',
+          timestamp: new Date(),
+          status: 'scanning'
+        };
+
+        setMessages(prev => [...prev, scanningMessage]);
+
+        // Step 5: Confirm upload and initiate Antivirus or malware scan
+        confirmResult = await documentService.confirmUpload(uploadData.document_id);
+        console.log("confirmResult", confirmResult);
+        
+        // Remove scanning message and add final result
+        setMessages(prev => 
+          prev.filter(msg => msg.id !== scanningMessage.id)
+        );
+        
+        if(confirmResult && confirmResult.status === 'clean') {
+          // Add a helpful message from the assistant
+          const assistantMessage = {
+            id: Date.now() + 3,
+            role: 'assistant',
+            content: `✅ The document has been scanned and is ready for processing. Would you like me to help you extract information from it?`,
+            timestamp: new Date(),
+            status: 'received'
+          };
+
+          setMessages(prev => [...prev, assistantMessage]);
+        } else if(confirmResult && confirmResult.status === 'quarantined') {
+          const assistantMessage = {
+            id: Date.now() + 3,
+            role: 'assistant',
+            content: `❌ The document has been scanned and quarantined due to security threats. Please contact support if you believe this is an error.`,
+            timestamp: new Date(),
+            status: 'received'
+          };
+          setMessages(prev => [...prev, assistantMessage]);
+        }
+      } else {
+        console.log("uploadResult", uploadResult);
+        setError('Upload failed or returned unexpected status');
+      }
+      
+    } catch (error) {
+      console.log(error);
+      console.error('File upload error:', error);
+      const errorMessage = error?.response?.data?.detail || error?.message || 'Unknown error occurred';
+      setError(`Failed to upload file: ${errorMessage}`);
+      
+      // Update message to show failure with safe property access
+      setMessages(prev => 
+        prev.map(msg => 
+          msg.id === fileMessage.id 
+            ? { 
+                ...msg, 
+                status: 'failed', 
+                content: uploadResult?.status === 'uploaded' 
+                  ? `Uploaded successfully, but failed to confirm upload: ${confirmResult?.status || 'unknown error'}` 
+                  : `Failed to upload: ${errorMessage}`
+              }
+            : msg
+        )
+      );
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleFileChange = async (e) => {
@@ -304,112 +421,25 @@ const ChatPage = () => {
 
     // Create a new session if none exists
     if (!currentSession) {
-      await createNewSessionSeamless();
-      // Wait a bit for session to be created, then try again
-      setTimeout(() => handleFileChange(e), 1000);
+      try {
+        const newSession = await chatService.createSession(null);
+        setSessions(prev => [newSession, ...prev]);
+        setCurrentSession(newSession);
+        setMessages([]);
+        // Now process the file upload with the new session
+        await processFileUpload(file, newSession);
+      } catch (error) {
+        console.error('Failed to create session for file upload:', error);
+        setError('Failed to create session. Please try again.');
+      } finally {
+        e.target.value = '';
+      }
       return;
     }
-
-    // Detect document type from filename
-    const docType = detectDocumentType(file.name);
     
-    // Create a message showing file upload
-    const fileMessage = {
-      id: Date.now(),
-      role: 'user',
-      content: `📎 Uploading file: ${file.name}`,
-      timestamp: new Date(),
-      status: 'sending'
-    };
-    
-    setMessages(prev => [...prev, fileMessage]);
-
-    try {
-      setIsLoading(true);
-      setError(null);
-      
-      // Request upload URL from backend
-      const uploadData = await documentService.requestUploadUrl(docType, currentSession.return_id || null);
-      console.log("uploadData\n", uploadData);
-
-      // Upload file to S3 using presigned POST URL
-      const formData = new FormData();
-      
-      // Add the fields from the presigned POST
-      if (uploadData.fields) {
-        console.log("uploadData fields\n", uploadData.fields);
-        Object.entries(uploadData.fields).forEach(([key, value]) => {
-          formData.append(key, value);
-        });
-      }
-      
-      // Add the file last
-      formData.append('file', file);
-      console.log("formData\n", formData);
-
-      // Upload with progress tracking 
-      // TODO: Use axios to upload the file to the presigned POST URL
-      const xhr = new XMLHttpRequest();
-      
-      const uploadPromise = new Promise((resolve, reject) => {
-        xhr.onload = () => {
-          if (xhr.status === 204 || xhr.status === 200) {
-            resolve();
-          } else {
-            reject(new Error(`Upload failed with status ${xhr.status}`));
-          }
-        };
-        xhr.onerror = () => reject(new Error('Upload failed'));
-        xhr.open('POST', uploadData.upload_url);
-        xhr.send(formData);
-      });
-
-      await uploadPromise;
-
-      // Confirm upload and initiate processing of scanning for malware
-      const confirmResult = await documentService.confirmUpload(uploadData.document_id);
-      
-      // Update message to show success
-      setMessages(prev => 
-        prev.map(msg => 
-          msg.id === fileMessage.id 
-            ? { 
-                ...msg, 
-                status: 'sent',
-                content: `📎 Uploaded file: ${file.name} (${docType}) - Status: ${confirmResult.status}`
-              }
-            : msg
-        )
-      );
-
-      // Add a helpful message from the assistant
-      const assistantMessage = {
-        id: Date.now() + 1,
-        role: 'assistant',
-        content: `✅ File uploaded successfully! The document has been scanned and is ${confirmResult.status === 'clean' ? 'ready for processing' : 'quarantined'}. ${confirmResult.status === 'clean' ? 'Would you like me to help you extract information from it?' : ''}`,
-        timestamp: new Date(),
-        status: 'received'
-      };
-      
-      setMessages(prev => [...prev, assistantMessage]);
-      
-    } catch (error) {
-      console.error('File upload error:', error);
-      setError(`Failed to upload file: ${error.message || error}`);
-      
-      // Update message to show failure
-      setMessages(prev => 
-        prev.map(msg => 
-          msg.id === fileMessage.id 
-            ? { ...msg, status: 'failed', content: `❌ Failed to upload: ${file.name}` }
-            : msg
-        )
-      );
-    } finally {
-      setIsLoading(false);
-      // Reset file input
-      e.target.value = '';
-    }
+    // Process file upload with existing session
+    await processFileUpload(file, currentSession);
+    e.target.value = '';
   };
 
   const formatTimestamp = (timestamp) => {
@@ -557,7 +587,7 @@ const ChatPage = () => {
         
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1 }}>
           <Typography variant="caption" color={message.role === 'user' ? 'white' : 'text.secondary'}>
-            {formatTimestamp(message.created_at)}
+            {formatTimestamp(message.timestamp || message.created_at || new Date())}
           </Typography>
           {message.role === 'user' && getMessageStatusIcon(message.status)}
         </Box>
@@ -613,7 +643,7 @@ const ChatPage = () => {
               >
                 <ListItemText
                   primary={`Chat ${session.id.slice(-8)}`}
-                  secondary={new Date(session.created_at).toLocaleDateString()}
+                  secondary={session.created_at ? new Date(session.created_at).toLocaleDateString() : 'No date'}
                   primaryTypographyProps={{ fontSize: '0.9rem' }}
                   secondaryTypographyProps={{ fontSize: '0.75rem' }}
                 />

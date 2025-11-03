@@ -19,12 +19,16 @@ class S3Service:
     """S3 service for document storage and management"""
     
     def __init__(self):
-        self.s3_client = boto3.client(
-            's3',
-            region_name=settings.AWS_REGION,
-            aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-            aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY
-        )
+        # Build credentials dict, only include session_token if present
+        credentials = {
+            'region_name': settings.AWS_REGION,
+            'aws_access_key_id': settings.AWS_ACCESS_KEY_ID,
+            'aws_secret_access_key': settings.AWS_SECRET_ACCESS_KEY
+        }
+        if settings.AWS_SESSION_TOKEN:
+            credentials['aws_session_token'] = settings.AWS_SESSION_TOKEN
+        
+        self.s3_client = boto3.client('s3', **credentials)
         self.upload_bucket = settings.S3_BUCKET_UPLOADS
         self.pdf_bucket = settings.S3_BUCKET_PDFS
         self.extract_bucket = settings.S3_BUCKET_EXTRACTS
@@ -51,7 +55,7 @@ class S3Service:
         try:
             # Generate unique file key
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            #
+            # FILE KEY
             file_key = f"uploads/{user_id}/{document_type}_{timestamp}.{file_extension}"
             
             # Determine content type
@@ -148,7 +152,7 @@ class S3Service:
             }
             
         except ClientError as e:
-            logger.error("S3 upload error", error=str(e), file_key=file_key)
+            logger.error("S3 upload error", error=str(e), file_key=file_key, function="upload_file", class_name="S3Service")
             raise Exception(f"Failed to upload file: {str(e)}")
     
     async def download_file(self, file_key: str, bucket: Optional[str] = None) -> bytes:
