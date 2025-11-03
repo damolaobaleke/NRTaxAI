@@ -41,8 +41,9 @@ class Settings(BaseSettings):
     
     # AWS
     AWS_REGION: str = "us-east-1"
-    AWS_ACCESS_KEY_ID: Optional[str] = None
-    AWS_SECRET_ACCESS_KEY: Optional[str] = None
+    AWS_ACCESS_KEY_ID: Optional[str] = os.getenv("AWS_ACCESS_KEY_ID")
+    AWS_SECRET_ACCESS_KEY: Optional[str] = os.getenv("AWS_SECRET_ACCESS_KEY")
+    AWS_SESSION_TOKEN: Optional[str] = os.getenv("AWS_SESSION_TOKEN")
     
     # S3
     S3_BUCKET_UPLOADS: str = "nrtaxai-uploads" # Tax form document uploads (W2, 1099-INT, 1099-NEC, 1098-T, 1042-S, 1099-DIV, 1099-B, 1099-MISC)

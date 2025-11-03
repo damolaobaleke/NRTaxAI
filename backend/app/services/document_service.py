@@ -18,6 +18,25 @@ from sqlalchemy import text
 logger = structlog.get_logger()
 
 
+def json_serialize_datetime(obj: Any) -> Any:
+    """
+    Recursively convert datetime objects to ISO format strings for JSON serialization
+    
+    Args:
+        obj: Object to serialize (dict, list, or primitive)
+        
+    Returns:
+        Object with datetime objects converted to ISO strings
+    """
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    elif isinstance(obj, dict):
+        return {key: json_serialize_datetime(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [json_serialize_datetime(item) for item in obj]
+    return obj
+
+
 class DocumentService:
     """Document upload and processing service"""
     
@@ -112,6 +131,97 @@ class DocumentService:
             )
             raise Exception(f"Failed to generate upload URL: {str(e)}")
     
+    async def upload_file_to_s3(
+        self,
+        document_id: str,
+        user_id: str,
+        file_content: bytes,
+        filename: Optional[str] = None,
+        content_type: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Upload file to S3 through backend (avoids CORS issues)
+        
+        Args:
+            document_id: Document ID
+            user_id: User ID for verification
+            file_content: File content as bytes
+            filename: Original filename
+            content_type: File content type
+            
+        Returns:
+            Upload result
+        """
+        try:
+            # Get document record
+            result = await self.db.execute(
+                text("""
+                SELECT * FROM documents 
+                WHERE id = :document_id AND user_id = :user_id
+                """),
+                {"document_id": document_id, "user_id": user_id}
+            )
+            document_row = result.fetchone()
+            
+            if not document_row:
+                raise ValueError("Document not found or access denied")
+            
+            # Convert to dict if needed
+            if hasattr(document_row, '_asdict'):
+                document = document_row._asdict()
+            else:
+                # Fallback for tuples
+                field_names = ['id', 'user_id', 'return_id', 's3_key', 'doc_type', 'source', 
+                              'status', 'extracted_json', 'validation_json', 'created_at', 
+                              'updated_at', 'textract_job_id']
+                document = dict(zip(field_names, document_row))
+            
+            # Validate file size
+            max_size = 10 * 1024 * 1024  # 10MB
+            if len(file_content) > max_size:
+                raise ValueError(f"File size exceeds maximum of {max_size / (1024*1024)}MB")
+            
+            # Upload to S3
+            upload_result = await s3_service.upload_file(
+                file_key=document["s3_key"],
+                file_content=file_content,
+                metadata={
+                    "filename": filename or "unknown",
+                    "content_type": content_type or "application/octet-stream",
+                    "user_id": user_id,
+                    "document_id": document_id
+                }
+            )
+            
+            # Update document status
+            await self.db.execute(
+                text("""
+                UPDATE documents 
+                SET status = 'uploaded', 
+                    source = 'user_upload',
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = :document_id
+                """),
+                {"document_id": document_id}
+            )
+            
+            logger.info("File uploaded to S3", 
+                       document_id=document_id,
+                       file_size=len(file_content),
+                       s3_key=document["s3_key"])
+            
+            return {
+                "document_id": document_id,
+                "status": "uploaded",
+                "file_size_bytes": len(file_content),
+                "s3_key": document["s3_key"],
+                "upload_result": upload_result
+            }
+            
+        except Exception as e:
+            logger.error("File upload to S3 failed", error=str(e), document_id=document_id, class_name="DocumentService", function="upload_file_to_s3")
+            raise Exception(f"Failed to upload file to S3: {str(e)}")
+    
     async def confirm_upload(
         self,
         document_id: str,
@@ -184,10 +294,10 @@ class DocumentService:
                 {
                     "document_id": document_id,
                     "status": "clean" if scan_result.get("clean") else "quarantined",
-                    "validation_json": json.dumps({
+                    "validation_json": json.dumps(json_serialize_datetime({
                         "av_scan": scan_result,
                         "file_metadata": file_metadata
-                    })
+                    }))
                 }
             )
             
@@ -207,11 +317,11 @@ class DocumentService:
                     """),
                     {
                         "document_id": document_id,
-                        "validation_json": json.dumps({
+                        "validation_json": json.dumps(json_serialize_datetime({
                             "av_scan": scan_result,
                             "quarantine": quarantine_result,
                             "file_metadata": file_metadata
-                        })
+                        }))
                     }
                 )
                 
@@ -234,7 +344,7 @@ class DocumentService:
             }
             
         except Exception as e:
-            logger.error("Upload confirmation failed", error=str(e), document_id=document_id)
+            logger.error("Upload confirmation failed", error=str(e), document_id=document_id, function="confirm_upload", class_name="DocumentService")
             raise Exception(f"Failed to confirm upload: {str(e)}")
     
     

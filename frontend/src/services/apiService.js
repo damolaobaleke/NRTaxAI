@@ -196,6 +196,21 @@ export const documentService = {
     return response.data;
   },
 
+  async uploadFile(documentId, file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    const response = await apiClient.post(`/documents/${documentId}/upload-file`,
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      }
+    );
+    return response.data;
+  },
+
   async confirmUpload(documentId) {
     const response = await apiClient.post(`/documents/${documentId}/confirm`);
     return response.data;

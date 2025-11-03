@@ -17,13 +17,17 @@ class BackupService:
     """Service for automated backups"""
     
     def __init__(self):
-        self.rds_client = boto3.client(
-            'rds',
-            region_name=settings.AWS_REGION,
-            aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-            aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY
-        )
-        self.s3_client = boto3.client('s3')
+        # Build credentials dict, only include session_token if present
+        credentials = {
+            'region_name': settings.AWS_REGION,
+            'aws_access_key_id': settings.AWS_ACCESS_KEY_ID,
+            'aws_secret_access_key': settings.AWS_SECRET_ACCESS_KEY
+        }
+        if settings.AWS_SESSION_TOKEN:
+            credentials['aws_session_token'] = settings.AWS_SESSION_TOKEN
+        
+        self.rds_client = boto3.client('rds', **credentials)
+        self.s3_client = boto3.client('s3', **credentials)
         self.backup_bucket = "nrtaxai-backups"
     
     async def create_database_snapshot(

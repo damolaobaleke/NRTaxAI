@@ -2,7 +2,7 @@
 Documents Endpoints
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from typing import List, Optional
 from uuid import UUID
 
@@ -56,6 +56,45 @@ async def request_upload_url(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate upload URL: {str(e)}"
+        )
+
+
+@router.post("/{document_id}/upload-file")
+async def upload_file_to_s3(
+    document_id: UUID,
+    file: UploadFile = File(...),
+    current_user: UserInDB = Depends(get_current_active_user),
+    db = Depends(get_database)
+):
+    """Upload file to S3 through backend (avoids CORS issues)"""
+    
+    try:
+        document_service = DocumentService(db)
+        
+        # Read file content
+        file_content = await file.read()
+        
+        # Upload to S3
+        result = await document_service.upload_file_to_s3(
+            document_id=str(document_id),
+            user_id=str(current_user.id),
+            file_content=file_content,
+            filename=file.filename,
+            content_type=file.content_type
+        )
+        
+        return result
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error("File upload failed", error=str(e), document_id=str(document_id))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload file: {str(e)}"
         )
 
 
