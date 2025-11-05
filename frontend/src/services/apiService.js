@@ -151,6 +151,16 @@ export const chatService = {
   async getUserSessions() {
     const response = await apiClient.get('/chat/sessions');
     return response.data;
+  },
+
+  async storeMessage(sessionId, role, content, toolCalls = null) {
+    const response = await apiClient.post('/chat/message/store', {
+      session_id: sessionId,
+      role: role,
+      content: content,
+      tool_calls: toolCalls
+    });
+    return response.data;
   }
 };
 

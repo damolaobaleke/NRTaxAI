@@ -92,7 +92,13 @@ class DocumentAggregationService:
             logger.debug("Processing document", doc_type=doc.get('doc_type'))
             
             try:
-                extracted_data = json.loads(doc["extracted_json"])
+                # JSONB columns are already parsed as dicts by asyncpg
+                if isinstance(doc["extracted_json"], dict):
+                    extracted_data = doc["extracted_json"]
+                elif isinstance(doc["extracted_json"], str):
+                    extracted_data = json.loads(doc["extracted_json"])
+                else:
+                    extracted_data = doc["extracted_json"]
                 fields = extracted_data.get("extracted_fields", {})
                 
                 # W-2: Wage income
@@ -232,7 +238,13 @@ class DocumentAggregationService:
                 continue
             
             try:
-                extracted_data = json.loads(doc["extracted_json"])
+                # JSONB columns are already parsed as dicts by asyncpg
+                if isinstance(doc["extracted_json"], dict):
+                    extracted_data = doc["extracted_json"]
+                elif isinstance(doc["extracted_json"], str):
+                    extracted_data = json.loads(doc["extracted_json"])
+                else:
+                    extracted_data = doc["extracted_json"]
                 fields = extracted_data.get("extracted_fields", {})
                 
                 # Federal income tax (all forms)

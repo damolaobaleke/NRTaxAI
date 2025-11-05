@@ -94,7 +94,7 @@ class AVScanner:
             response_payload = json.loads(response['Payload'].read())
             
             if response.get('FunctionError'):
-                logger.error("AV scan Lambda error", error=response_payload, function_name="scan_file", class_name="AVScanner")
+                logger.error("Antivirus scan Lambda function error", error=response_payload, function_name="scan_file", class_name="AVScanner")
                 return {
                     "scan_status": "error",
                     "error": response_payload.get('errorMessage', 'Unknown error'),
@@ -103,7 +103,7 @@ class AVScanner:
             
             # Process scan result
             scan_result = response_payload.get('scan_result', {})
-            
+            print(scan_result)
             return {
                 "scan_status": scan_result.get('status', 'unknown'),
                 "threats_detected": scan_result.get('threats_detected', 0),
@@ -292,7 +292,7 @@ class AVScanner:
             return {
                 "released": False,
                 "error": str(e),
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now().isoformat()
             }
     
     async def batch_scan_files(

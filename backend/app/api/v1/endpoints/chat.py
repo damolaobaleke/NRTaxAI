@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List, Optional
 from uuid import UUID
 from sqlalchemy import text
+from pydantic import BaseModel
 import json
 
 from app.core.database import get_database
@@ -16,7 +17,6 @@ from app.models.chat import (
     ChatSession, ChatSessionCreate, ChatMessage, ChatMessageRequest,
     ChatMessageResponse, ChatHistory
 )
-from sqlalchemy import text
 
 router = APIRouter()
 
@@ -172,3 +172,61 @@ async def get_user_sessions(
     sessions = result.fetchall()
     
     return [ChatSession(**session._asdict()) for session in sessions]
+
+
+class StoreMessageRequest(BaseModel):
+    """Request model for storing a message"""
+    session_id: UUID
+    role: str
+    content: str
+    tool_calls: Optional[List[dict]] = None
+
+
+@router.post("/message/store")
+async def store_message(
+    message_data: StoreMessageRequest,
+    current_user: UserInDB = Depends(get_current_active_user),
+    db = Depends(get_database)
+):
+    """Store a message in the database without triggering AI response"""
+    
+    # Validate role
+    if message_data.role not in ["user", "assistant", "system", "tool"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid role: {message_data.role}. Must be one of: user, assistant, system, tool"
+        )
+    
+    # Verify session ownership
+    result = await db.execute(
+        text("""
+            SELECT * FROM chat_sessions 
+            WHERE id = :session_id AND user_id = :user_id
+            """),
+        {
+            "session_id": message_data.session_id,
+            "user_id": current_user.id
+        }
+    )
+    session = result.fetchone()
+    
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session not found"
+        )
+    
+    # Use ChatService to store the message (it has the _store_message method)
+    chat_service = ChatService(db)
+    await chat_service._store_message(
+        session_id=str(message_data.session_id),
+        role=message_data.role,
+        content=message_data.content,
+        tool_calls=message_data.tool_calls
+    )
+    
+    return {
+        "message": "Message stored successfully",
+        "session_id": str(message_data.session_id),
+        "role": message_data.role
+    }

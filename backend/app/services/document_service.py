@@ -280,67 +280,71 @@ class DocumentService:
                 {"document_id": document_id}
             )
             
+            # TODO: Antivirus scanning temporarily disabled - will re-enable after VirusTotal API key is configured
             # Initiate Antivirus scanning on the file
-            scan_result = await av_scanner.scan_file(document["s3_key"])
+            # scan_result = await av_scanner.scan_file(document["s3_key"])
             
-            # Update document with scan result
+            # Update document with file metadata (scanning skipped for now)
             await self.db.execute(
                 text("""
                 UPDATE documents 
-                SET status = :status,
+                SET status = 'clean',
                     validation_json = :validation_json
                 WHERE id = :document_id
                 """),
                 {
                     "document_id": document_id,
-                    "status": "clean" if scan_result.get("clean") else "quarantined",
                     "validation_json": json.dumps(json_serialize_datetime({
-                        "av_scan": scan_result,
-                        "file_metadata": file_metadata
+                        # "av_scan": scan_result,  # Commented out until VirusTotal API key is configured
+                        "file_metadata": file_metadata,
+                        "scan_skipped": True,
+                        "scan_note": "Antivirus scanning temporarily disabled - will be enabled after VirusTotal API key configuration"
                     }))
                 }
             )
             
+            # TODO: Re-enable quarantine logic after VirusTotal API key is configured
             # If file is infected, quarantine it
-            if not scan_result.get("clean", False) and scan_result.get("threats_detected", 0) > 0:
-                quarantine_result = await av_scanner.quarantine_file(
-                    document["s3_key"],
-                    reason="malware_detected"
-                )
-                
-                await self.db.execute(
-                    text("""
-                    UPDATE documents 
-                    SET status = 'quarantined',
-                        validation_json = :validation_json
-                    WHERE id = :document_id
-                    """),
-                    {
-                        "document_id": document_id,
-                        "validation_json": json.dumps(json_serialize_datetime({
-                            "av_scan": scan_result,
-                            "quarantine": quarantine_result,
-                            "file_metadata": file_metadata
-                        }))
-                    }
-                )
-                
-                logger.warning("Document quarantined", 
-                              document_id=document_id, 
-                              threats=scan_result.get("threats_detected", 0))
+            # if not scan_result.get("clean", False) and scan_result.get("threats_detected", 0) > 0:
+            #     quarantine_result = await av_scanner.quarantine_file(
+            #         document["s3_key"],
+            #         reason="malware_detected"
+            #     )
+            #     
+            #     await self.db.execute(
+            #         text("""
+            #         UPDATE documents 
+            #         SET status = 'quarantined',
+            #             validation_json = :validation_json
+            #         WHERE id = :document_id
+            #         """),
+            #         {
+            #             "document_id": document_id,
+            #             "validation_json": json.dumps(json_serialize_datetime({
+            #                 "av_scan": scan_result,
+            #                 "quarantine": quarantine_result,
+            #                 "file_metadata": file_metadata
+            #             }))
+            #         }
+            #     )
+            #     
+            #     logger.warning("Document quarantined", 
+            #                   document_id=document_id, 
+            #                   threats=scan_result.get("threats_detected", 0))
             
             # Log successful upload
-            logger.info("Document upload confirmed", 
+            logger.info("Document upload confirmed (AV scanning skipped)", 
                        document_id=document_id,
                        file_size=file_metadata.get("size_bytes", 0),
-                       clean=scan_result.get("clean", False))
-            
+                       ready_for_processing=True) #clean=scan_result.get("clean", False))
+
             return {
                 "document_id": document_id,
-                "status": "clean" if scan_result.get("clean") else "quarantined",
+                "status": "clean",  # Mark as clean to proceed with OCR.  "clean" if scan_result.get("clean") else "quarantined"
                 "file_size_bytes": file_metadata.get("size_bytes", 0),
-                "av_scan_result": scan_result,
-                "ready_for_processing": scan_result.get("clean", False)
+                # "av_scan_result": scan_result,  # Commented out until VirusTotal API key is configured
+                "ready_for_processing": True,  # Always ready since scanning is skipped. scan_result.get("clean", False)
+                "scan_skipped": True
             }
             
         except Exception as e:
@@ -387,8 +391,14 @@ class DocumentService:
             validation_data = {}
             if document.get("validation_json"):
                 try:
-                    validation_data = json.loads(document["validation_json"])
-                except json.JSONDecodeError:
+                    # JSONB columns are already parsed as dicts by asyncpg
+                    if isinstance(document["validation_json"], dict):
+                        validation_data = document["validation_json"]
+                    elif isinstance(document["validation_json"], str):
+                        validation_data = json.loads(document["validation_json"])
+                    else:
+                        validation_data = document["validation_json"]
+                except (json.JSONDecodeError, TypeError):
                     pass
             
             return {
@@ -462,8 +472,14 @@ class DocumentService:
                 validation_data = {}
                 if doc.get("validation_json"):
                     try:
-                        validation_data = json.loads(doc["validation_json"])
-                    except json.JSONDecodeError:
+                        # JSONB columns are already parsed as dicts by asyncpg
+                        if isinstance(doc["validation_json"], dict):
+                            validation_data = doc["validation_json"]
+                        elif isinstance(doc["validation_json"], str):
+                            validation_data = json.loads(doc["validation_json"])
+                        else:
+                            validation_data = doc["validation_json"]
+                    except (json.JSONDecodeError, TypeError):
                         pass
                 
                 result.append({

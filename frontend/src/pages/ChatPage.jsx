@@ -40,7 +40,7 @@ import {
   Description
 } from '@mui/icons-material';
 import ReactMarkdown from 'react-markdown';
-import { chatService, documentService } from '../services/apiService';
+import { chatService, documentService, taxReturnService } from '../services/apiService';
 import { useAuth } from '../contexts/AuthContext';
 
 const ChatPage = () => {
@@ -281,6 +281,152 @@ const ChatPage = () => {
     return 'W2';
   };
 
+  // Helper function to store assistant message in database via chat service
+  const storeAssistantMessageInDB = async (content, toolCalls = null) => {
+    if (!currentSession) return;
+
+    try {
+      // Store the assistant message using the chat service
+      await chatService.storeMessage(
+        currentSession.id,
+        'assistant',
+        content,
+        toolCalls
+      );
+    } catch (error) {
+      console.error('Failed to store message in DB:', error);
+      // Don't throw - we still want to show the message in UI even if DB storage fails
+    }
+  };
+
+  // Helper function to store user message in database
+  const storeUserMessageInDB = async (content) => {
+    if (!currentSession) return;
+
+    try {
+      await chatService.storeMessage(
+        currentSession.id,
+        'user',
+        content
+      );
+    } catch (error) {
+      console.error('Failed to store user message in DB:', error);
+    }
+  };
+
+  // Helper function to poll extraction status until completion
+  const pollExtractionStatus = async (documentId, maxAttempts = 30, interval = 2000) => {
+    let attempts = 0;
+    
+    while (attempts < maxAttempts) {
+      try {
+        const result = await documentService.getExtractionResult(documentId);
+        
+        // Check if extraction is complete
+        if (result.status === 'extracted' || result.status === 'validation_failed') {
+          return result;
+        }
+        
+        // If still processing, wait and try again
+        if (result.status === 'processing') {
+          await new Promise(resolve => setTimeout(resolve, interval));
+          attempts++;
+          continue;
+        }
+        
+        // If failed, return the result
+        if (result.status === 'failed') {
+          return result;
+        }
+        
+        // Wait before next attempt
+        await new Promise(resolve => setTimeout(resolve, interval));
+        attempts++;
+      } catch (error) {
+        console.error('Error polling extraction status:', error);
+        throw error;
+      }
+    }
+    
+    throw new Error('Extraction polling timeout - maximum attempts reached');
+  };
+
+  // Helper function to get common tax forms that might be needed
+  const getCommonTaxForms = () => {
+    return ['W2', '1099INT', '1099NEC', '1099DIV', '1099MISC', '1098T', '1042S'];
+  };
+
+  // Helper function to check for missing tax forms
+  const checkMissingTaxForms = async (returnId, uploadedDocType) => {
+    if (!returnId) return [];
+    
+    try {
+      // Get all documents for this return
+      const documents = await documentService.getDocuments(returnId);
+      
+      // Get uploaded document types
+      const uploadedTypes = documents.map(doc => doc.doc_type);
+      
+      // Common tax forms that might be needed
+      const commonForms = getCommonTaxForms();
+      
+      // Filter out the form that was just uploaded
+      const missingForms = commonForms.filter(form => 
+        !uploadedTypes.includes(form) && form !== uploadedDocType
+      );
+      
+      return missingForms;
+    } catch (error) {
+      console.error('Error checking missing tax forms:', error);
+      return [];
+    }
+  };
+
+  // Helper function to ask about missing tax forms
+  const askAboutMissingForms = async (missingForms, uploadedDocType) => {
+    if (missingForms.length === 0) {
+      return false; // No missing forms, proceed with computation
+    }
+    
+    // Create a message asking about missing forms
+    const formNames = missingForms.map(form => {
+      const formMap = {
+        'W2': 'W-2',
+        '1099INT': '1099-INT',
+        '1099NEC': '1099-NEC',
+        '1099DIV': '1099-DIV',
+        '1099MISC': '1099-MISC',
+        '1099B': '1099-B',
+        '1098T': '1098-T',
+        '1042S': '1042-S'
+      };
+      return formMap[form] || form;
+    });
+    
+    const messageContent = `📋 I've extracted information from your ${uploadedDocType} document. 
+
+Before I can compute your tax return, I need to know if you have any other tax forms. Common forms include:
+${formNames.map(form => `- ${form}`).join('\n')}
+
+Do you have any of these forms? If yes, please upload them. If no, I'll proceed with what we have.`;
+    
+    const assistantMessage = {
+      id: Date.now() + 1000,
+      role: 'assistant',
+      content: messageContent,
+      timestamp: new Date(),
+      status: 'received'
+    };
+    
+    setMessages(prev => [...prev, assistantMessage]);
+    
+    // Store message in DB (if endpoint exists)
+    await storeAssistantMessageInDB(messageContent);
+    
+    // Return true to indicate we're waiting for user response
+    return true;
+  };
+
   const handleFileUpload = () => {
     fileInputRef.current?.click();
   };
@@ -296,6 +442,9 @@ const ChatPage = () => {
     };
     
     setMessages(prev => [...prev, fileMessage]);
+    
+    // Store user message in DB
+    await storeUserMessageInDB(fileMessage.content);
 
     let uploadResult = null;
     let confirmResult = null;
@@ -316,17 +465,20 @@ const ChatPage = () => {
       // Step 4: If upload is successful, confirm upload and initiate Antivirus or malware scan
       if(uploadResult && uploadResult.status === 'uploaded') {
         // Update message to show success
+        const uploadSuccessContent = `📎 Uploaded file: ${file.name} (${docType}) successfully`;
         setMessages(prev => 
           prev.map(msg => 
             msg.id === fileMessage.id 
               ? { 
                   ...msg, 
                   status: 'sent',
-                  content: `📎 Uploaded file: ${file.name} (${docType}) successfully`
+                  content: uploadSuccessContent
                 }
               : msg
           )
         );
+        // Store updated user message in DB
+        await storeUserMessageInDB(uploadSuccessContent);
         
         // "Now scanning for malware..." message as string (not JSX)
         const scanningMessage = {
@@ -338,6 +490,7 @@ const ChatPage = () => {
         };
 
         setMessages(prev => [...prev, scanningMessage]);
+        await storeAssistantMessageInDB(scanningMessage.content);
 
         // Step 5: Confirm upload and initiate Antivirus or malware scan
         confirmResult = await documentService.confirmUpload(uploadData.document_id);
@@ -349,16 +502,173 @@ const ChatPage = () => {
         );
         
         if(confirmResult && confirmResult.status === 'clean') {
-          // Add a helpful message from the assistant
-          const assistantMessage = {
+          // Automatically start extraction
+          const extractionStartMessage = {
             id: Date.now() + 3,
             role: 'assistant',
-            content: `✅ The document has been scanned and is ready for processing. Would you like me to help you extract information from it?`,
+            content: `✅ The document has been scanned and is clean. Starting information extraction...`,
             timestamp: new Date(),
-            status: 'received'
+            status: 'processing'
           };
-
-          setMessages(prev => [...prev, assistantMessage]);
+          
+          setMessages(prev => [...prev, extractionStartMessage]);
+          await storeAssistantMessageInDB(extractionStartMessage.content);
+          
+          try {
+            // Start extraction
+            const extractionStart = await documentService.startExtraction(uploadData.document_id);
+            console.log("Extraction started:", extractionStart);
+            
+            // Update message to show extraction in progress
+            const extractionProgressContent = '🔄 Extracting information from document... This may take a few moments.';
+            setMessages(prev => 
+              prev.map(msg => 
+                msg.id === extractionStartMessage.id 
+                  ? { 
+                      ...msg, 
+                      content: extractionProgressContent,
+                      status: 'processing'
+                    }
+                  : msg
+              )
+            );
+            // Store the updated message
+            await storeAssistantMessageInDB(extractionProgressContent);
+            
+            // Poll for extraction status
+            const extractionResult = await pollExtractionStatus(uploadData.document_id);
+            console.log("Extraction result:", extractionResult);
+            
+            // Remove processing message and add completion message
+            setMessages(prev => 
+              prev.filter(msg => msg.id !== extractionStartMessage.id)
+            );
+            
+            if (extractionResult.status === 'extracted') {
+              // Extraction successful
+              const successMessage = {
+                id: Date.now() + 4,
+                role: 'assistant',
+                content: `✅ Successfully extracted information from your ${docType} document!`,
+                timestamp: new Date(),
+                status: 'received'
+              };
+              
+              setMessages(prev => [...prev, successMessage]);
+              await storeAssistantMessageInDB(successMessage.content);
+              
+              // Get document details to retrieve return_id
+              let returnId = session?.return_id;
+              try {
+                const documentDetails = await documentService.getDocument(uploadData.document_id);
+                returnId = returnId || documentDetails.return_id;
+              } catch (error) {
+                console.error('Failed to get document details:', error);
+              }
+              
+              if (returnId) {
+                const missingForms = await checkMissingTaxForms(returnId, docType);
+                const waitingForForms = await askAboutMissingForms(missingForms, docType);
+                
+                // If no missing forms or user has indicated they don't have more, proceed with computation
+                if (!waitingForForms) {
+                  // Wait a bit for user to see the message, then proceed with computation
+                  setTimeout(async () => {
+                    try {
+                      const computeMessage = {
+                        id: Date.now() + 5,
+                        role: 'assistant',
+                        content: '💼 Starting tax computation...',
+                        timestamp: new Date(),
+                        status: 'processing'
+                      };
+                      
+                      setMessages(prev => [...prev, computeMessage]);
+                      await storeAssistantMessageInDB(computeMessage.content);
+                      
+                      const computationResult = await taxReturnService.computeTax(returnId);
+                      console.log("Tax computation result:", computationResult);
+                      
+                      // Update message with computation result
+                      setMessages(prev => 
+                        prev.map(msg => 
+                          msg.id === computeMessage.id 
+                            ? { 
+                                ...msg, 
+                                content: `✅ Tax computation completed! Your tax return has been processed.`,
+                                status: 'received'
+                              }
+                            : msg
+                        )
+                      );
+                      
+                      await storeAssistantMessageInDB(`✅ Tax computation completed! Your tax return has been processed.`);
+                    } catch (error) {
+                      console.error('Tax computation error:', error);
+                      const errorMessage = {
+                        id: Date.now() + 6,
+                        role: 'assistant',
+                        content: `❌ Failed to compute tax return: ${error.response?.data?.detail || error.message}`,
+                        timestamp: new Date(),
+                        status: 'received'
+                      };
+                      
+                      setMessages(prev => [...prev, errorMessage]);
+                      await storeAssistantMessageInDB(errorMessage.content);
+                    }
+                  }, 2000); // Wait 2 seconds before starting computation
+                }
+              } else {
+                // No return_id, so we can't compute tax yet
+                const noReturnMessage = {
+                  id: Date.now() + 5,
+                  role: 'assistant',
+                  content: `📄 Extraction complete! To compute your tax return, please create or select a tax return first.`,
+                  timestamp: new Date(),
+                  status: 'received'
+                };
+                
+                setMessages(prev => [...prev, noReturnMessage]);
+                await storeAssistantMessageInDB(noReturnMessage.content);
+              }
+            } else if (extractionResult.status === 'validation_failed') {
+              // Extraction completed but validation failed
+              const validationMessage = {
+                id: Date.now() + 4,
+                role: 'assistant',
+                content: `⚠️ Information extracted, but some fields failed validation. Please review the extracted data.`,
+                timestamp: new Date(),
+                status: 'received'
+              };
+              
+              setMessages(prev => [...prev, validationMessage]);
+              await storeAssistantMessageInDB(validationMessage.content);
+            } else {
+              // Extraction failed
+              const errorMessage = {
+                id: Date.now() + 4,
+                role: 'assistant',
+                content: `❌ Failed to extract information from document: ${extractionResult.error || 'Unknown error'}`,
+                timestamp: new Date(),
+                status: 'received'
+              };
+              
+              setMessages(prev => [...prev, errorMessage]);
+              await storeAssistantMessageInDB(errorMessage.content);
+            }
+          } catch (error) {
+            console.error('Extraction error:', error);
+            const errorMessage = {
+              id: Date.now() + 4,
+              role: 'assistant',
+              content: `❌ Failed to start extraction: ${error.response?.data?.detail || error.message}`,
+              timestamp: new Date(),
+              status: 'received'
+            };
+            
+            setMessages(prev => [...prev, errorMessage]);
+            await storeAssistantMessageInDB(errorMessage.content);
+          }
         } else if(confirmResult && confirmResult.status === 'quarantined') {
           const assistantMessage = {
             id: Date.now() + 3,
@@ -368,6 +678,7 @@ const ChatPage = () => {
             status: 'received'
           };
           setMessages(prev => [...prev, assistantMessage]);
+          await storeAssistantMessageInDB(assistantMessage.content);
         }
       } else {
         console.log("uploadResult", uploadResult);
@@ -378,22 +689,27 @@ const ChatPage = () => {
       console.log(error);
       console.error('File upload error:', error);
       const errorMessage = error?.response?.data?.detail || error?.message || 'Unknown error occurred';
-      setError(`Failed to upload file: ${errorMessage}`);
+      setError(`${errorMessage}`);
       
       // Update message to show failure with safe property access
+      const errorContent = uploadResult?.status === 'uploaded' 
+        ? `Uploaded successfully, but failed to confirm upload: ${confirmResult?.status || 'unknown error'}` 
+        : `Failed to upload: ${errorMessage}`;
+      
       setMessages(prev => 
         prev.map(msg => 
           msg.id === fileMessage.id 
             ? { 
                 ...msg, 
                 status: 'failed', 
-                content: uploadResult?.status === 'uploaded' 
-                  ? `Uploaded successfully, but failed to confirm upload: ${confirmResult?.status || 'unknown error'}` 
-                  : `Failed to upload: ${errorMessage}`
+                content: errorContent
               }
             : msg
         )
       );
+      
+      // Store error message in DB
+      await storeUserMessageInDB(errorContent);
     } finally {
       setIsLoading(false);
     }

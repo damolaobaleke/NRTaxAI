@@ -9,24 +9,57 @@ import tempfile
 import json
 from typing import Dict, Any
 
-def create_lambda_package() -> str:
-    """Create Lambda deployment package"""
+def create_lambda_package() -> bytes:
+    """Create Lambda deployment package and return zip file contents as bytes"""
+    import subprocess
+    import sys
     
     # Create temporary directory
     with tempfile.TemporaryDirectory() as temp_dir:
         package_path = os.path.join(temp_dir, "av_scanner.zip")
         
+        # Install dependencies to a temporary directory
+        lambda_dir = os.path.join(os.path.dirname(__file__), 'lambda')
+        requirements_file = os.path.join(lambda_dir, 'requirements.txt')
+        
+        if os.path.exists(requirements_file):
+            # Install dependencies to temp_dir
+            install_dir = os.path.join(temp_dir, 'python')
+            os.makedirs(install_dir, exist_ok=True)
+            
+            print(f"Installing dependencies from {requirements_file}...")
+            subprocess.check_call([
+                sys.executable, '-m', 'pip', 'install',
+                '-r', requirements_file,
+                '-t', install_dir,
+                '--no-cache-dir',
+                '--upgrade'
+            ])
+        
+        # Create zip file
         with zipfile.ZipFile(package_path, 'w', zipfile.ZIP_DEFLATED) as zip_file:
             # Add main Lambda function
-            lambda_file = os.path.join(os.path.dirname(__file__), 'lambda', 'av_scanner.py')
+            lambda_file = os.path.join(lambda_dir, 'av_scanner.py')
+            if not os.path.exists(lambda_file):
+                raise FileNotFoundError(f"Lambda function file not found: {lambda_file}")
             zip_file.write(lambda_file, 'av_scanner.py')
             
-            # Add requirements (install them first)
-            requirements_file = os.path.join(os.path.dirname(__file__), 'lambda', 'requirements.txt')
-            if os.path.exists(requirements_file):
-                zip_file.write(requirements_file, 'requirements.txt')
+            # Add installed dependencies
+            if os.path.exists(install_dir):
+                for root, dirs, files in os.walk(install_dir):
+                    # Skip __pycache__ and .pyc files
+                    dirs[:] = [d for d in dirs if d != '__pycache__']
+                    for file in files:
+                        if not file.endswith('.pyc'):
+                            file_path = os.path.join(root, file)
+                            arcname = os.path.relpath(file_path, install_dir)
+                            zip_file.write(file_path, arcname)
         
-        return package_path
+        # Read the zip file contents before the temp directory is deleted
+        with open(package_path, 'rb') as f:
+            zip_contents = f.read()
+        
+        return zip_contents
 
 def deploy_lambda_function(
     function_name: str = "nrtaxai-av-scanner",
@@ -37,8 +70,8 @@ def deploy_lambda_function(
     
     lambda_client = boto3.client('lambda', region_name=region)
     
-    # Create deployment package
-    package_path = create_lambda_package()
+    # Create deployment package (returns bytes)
+    zip_contents = create_lambda_package()
     
     try:
         # Check if function exists
@@ -50,11 +83,10 @@ def deploy_lambda_function(
         
         if function_exists:
             # Update existing function
-            with open(package_path, 'rb') as zip_file:
-                response = lambda_client.update_function_code(
-                    FunctionName=function_name,
-                    ZipFile=zip_file.read()
-                )
+            response = lambda_client.update_function_code(
+                FunctionName=function_name,
+                ZipFile=zip_contents
+            )
             
             print(f"✅ Updated Lambda function: {function_name}")
             
@@ -63,22 +95,30 @@ def deploy_lambda_function(
             if not role_arn:
                 raise ValueError("role_arn is required for new function creation")
             
-            with open(package_path, 'rb') as zip_file:
-                response = lambda_client.create_function(
-                    FunctionName=function_name,
-                    Runtime='python3.9',
-                    Role=role_arn,
-                    Handler='av_scanner.lambda_handler',
-                    Code={'ZipFile': zip_file.read()},
-                    Description='NRTaxAI Antivirus Scanner',
-                    Timeout=300,  # 5 minutes
-                    MemorySize=1024,  # 1GB
-                    Environment={
-                        'Variables': {
-                            'LOG_LEVEL': 'INFO'
-                        }
-                    }
-                )
+            # Get VirusTotal API key from environment if available
+            env_vars = {
+                'LOG_LEVEL': 'INFO'
+            }
+            virustotal_key = os.environ.get('VIRUSTOTAL_API_KEY')
+            if virustotal_key:
+                env_vars['VIRUSTOTAL_API_KEY'] = virustotal_key
+                print("✅ VirusTotal API key configured from environment")
+            else:
+                print("⚠️  Warning: VIRUSTOTAL_API_KEY not set. Set it in Lambda environment variables after deployment.")
+            
+            response = lambda_client.create_function(
+                FunctionName=function_name,
+                Runtime='python3.9',
+                Role=role_arn,
+                Handler='av_scanner.lambda_handler',
+                Code={'ZipFile': zip_contents},
+                Description='NRTaxAI Antivirus Scanner',
+                Timeout=300,  # 5 minutes
+                MemorySize=1024,  # 1GB
+                Environment={
+                    'Variables': env_vars
+                }
+            )
             
             print(f"✅ Created Lambda function: {function_name}")
         

@@ -58,6 +58,38 @@ from .feature_flags import (
     FeatureFlagBatch, FeatureFlagImport, FeatureFlagType
 )
 
+from .university import (
+    University, UniversityCreate, UniversityUpdate, UniversityInDB,
+    Partnership, PartnershipCreate, PartnershipUpdate, PartnershipInDB,
+    PartnershipWithUniversity,
+    UniversityAdmin, UniversityAdminCreate, UniversityAdminInDB,
+    UniversityStatus, PartnershipModelType, PartnershipStatus, UniversityAdminRole
+)
+
+from .referral import (
+    Referral, ReferralCreate, ReferralUpdate, ReferralInDB,
+    ReferralTrackRequest, ReferralTrackResponse,
+    ReferralStatus
+)
+
+from .transaction import (
+    Transaction, TransactionCreate, TransactionUpdate, TransactionInDB,
+    TransactionWithDetails,
+    TransactionType, TransactionStatus
+)
+
+from .payout import (
+    Payout, PayoutCreate, PayoutUpdate, PayoutInDB,
+    PayoutCalculation, PayoutWithPartnership,
+    PayoutMethod, PayoutStatus
+)
+
+from .license import (
+    License, LicenseCreate, LicenseUpdate, LicenseInDB,
+    LicenseAllocateRequest, LicenseConsumeRequest, LicenseUsageStats,
+    SeatType, LicenseStatus
+)
+
 __all__ = [
     # User models
     "User", "UserCreate", "UserUpdate", "UserInDB",
@@ -106,5 +138,32 @@ __all__ = [
     "FeatureFlag", "FeatureFlagCreate", "FeatureFlagUpdate", "FeatureFlagInDB",
     "BooleanFeatureFlag", "StringFeatureFlag", "NumberFeatureFlag", "JsonFeatureFlag", "ListFeatureFlag",
     "FeatureFlagEvaluation", "FeatureFlagOverride", "FeatureFlagAudit", "FeatureFlagUsage",
-    "FeatureFlagBatch", "FeatureFlagImport", "FeatureFlagType"
+    "FeatureFlagBatch", "FeatureFlagImport", "FeatureFlagType",
+    
+    # University and Partnership models
+    "University", "UniversityCreate", "UniversityUpdate", "UniversityInDB",
+    "Partnership", "PartnershipCreate", "PartnershipUpdate", "PartnershipInDB",
+    "PartnershipWithUniversity",
+    "UniversityAdmin", "UniversityAdminCreate", "UniversityAdminInDB",
+    "UniversityStatus", "PartnershipModelType", "PartnershipStatus", "UniversityAdminRole",
+    
+    # Referral models
+    "Referral", "ReferralCreate", "ReferralUpdate", "ReferralInDB",
+    "ReferralTrackRequest", "ReferralTrackResponse",
+    "ReferralStatus",
+    
+    # Transaction models
+    "Transaction", "TransactionCreate", "TransactionUpdate", "TransactionInDB",
+    "TransactionWithDetails",
+    "TransactionType", "TransactionStatus",
+    
+    # Payout models
+    "Payout", "PayoutCreate", "PayoutUpdate", "PayoutInDB",
+    "PayoutCalculation", "PayoutWithPartnership",
+    "PayoutMethod", "PayoutStatus",
+    
+    # License models
+    "License", "LicenseCreate", "LicenseUpdate", "LicenseInDB",
+    "LicenseAllocateRequest", "LicenseConsumeRequest", "LicenseUsageStats",
+    "SeatType", "LicenseStatus"
 ]

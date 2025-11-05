@@ -332,6 +332,8 @@ module "lambda" {
       
       environment_variables = {
         S3_BUCKET_UPLOADS = module.s3.bucket_names["uploads"]
+        # VIRUSTOTAL_API_KEY should be set via AWS Secrets Manager or environment variable
+        # For production, use: VIRUSTOTAL_API_KEY = "${var.project_name}/VIRUSTOTAL_API_KEY"
       }
     }
     

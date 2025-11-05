@@ -281,7 +281,7 @@ Remember: Tax preparation requires accuracy. Always use the tools to get exact c
             # Store user message
             await self._store_message(session_id, "user", message)
             
-            # ================================ Call OpenAI with tools ================================
+            # ================================ Call OpenAI with tools (Get assistant response) ================================
             response = await self._call_openai_with_tools(
                 messages=messages,
                 user_id=user_id,

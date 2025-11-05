@@ -362,17 +362,35 @@ class ExtractionPipeline:
             # Add extracted data if available
             if document.get("extracted_json"):
                 try:
-                    extracted_data = json.loads(document["extracted_json"])
+                    # JSONB columns are already parsed as dicts by asyncpg
+                    if isinstance(document["extracted_json"], dict):
+                        extracted_data = document["extracted_json"]
+                    elif isinstance(document["extracted_json"], str):
+                        extracted_data = json.loads(document["extracted_json"])
+                    else:
+                        extracted_data = document["extracted_json"]
                     status_info["extracted_data"] = extracted_data
-                except json.JSONDecodeError:
+                except (json.JSONDecodeError, TypeError) as e:
+                    logger.warning("Failed to parse extracted_json", 
+                                  error=str(e), 
+                                  document_id=document_id)
                     pass
             
             # Add validation data if available
             if document.get("validation_json"):
                 try:
-                    validation_data = json.loads(document["validation_json"])
+                    # JSONB columns are already parsed as dicts by asyncpg
+                    if isinstance(document["validation_json"], dict):
+                        validation_data = document["validation_json"]
+                    elif isinstance(document["validation_json"], str):
+                        validation_data = json.loads(document["validation_json"])
+                    else:
+                        validation_data = document["validation_json"]
                     status_info["validation_data"] = validation_data
-                except json.JSONDecodeError:
+                except (json.JSONDecodeError, TypeError) as e:
+                    logger.warning("Failed to parse validation_json", 
+                                  error=str(e), 
+                                  document_id=document_id)
                     pass
             
             return status_info
