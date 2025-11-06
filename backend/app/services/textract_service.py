@@ -16,7 +16,9 @@ logger = structlog.get_logger()
 
 
 class TextractService:
-    """AWS Textract service for document OCR and text extraction"""
+    """AWS Textract service for document OCR and text extraction
+        https://docs.aws.amazon.com/textract/latest/dg/how-it-works-document-layout.html
+    """
     
     def __init__(self):
         # Build credentials dict, only include session_token if present
@@ -62,6 +64,8 @@ class TextractService:
             Job result with job ID
         """
         try:
+            print("STARTED TEXTTRACT DOCUMENT ANALYSIS")
+
             bucket = bucket or self.s3_bucket
             
             # Get appropriate features for document type
@@ -79,6 +83,7 @@ class TextractService:
             )
             
             job_id = response['JobId']
+            print("textract JOB ID", job_id)
             
             logger.info("Textract analysis started", 
                        job_id=job_id, 
@@ -94,7 +99,7 @@ class TextractService:
                 "bucket": bucket,
                 "document_type": document_type,
                 "feature_types": feature_types,
-                "started_at": datetime.utcnow().isoformat()
+                "started_at": datetime.now().isoformat()
             }
             
         except ClientError as e:
@@ -144,6 +149,9 @@ class TextractService:
                 # Get all pages of results
                 blocks = response.get('Blocks', [])
                 
+                print("=====================textract blocks===========================")
+                print(json.dumps(blocks, indent=4))
+                print("=====================textract blocks===========================")
                 # Handle pagination
                 next_token = response.get('NextToken')
                 while next_token and len(blocks) < max_pages:
@@ -171,6 +179,8 @@ class TextractService:
                     "completed_at": datetime.utcnow().isoformat()
                 }
             
+            print("textract status", status)
+
             return {
                 "job_id": job_id,
                 "status": status,

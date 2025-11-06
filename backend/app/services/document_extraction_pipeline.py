@@ -85,11 +85,15 @@ class ExtractionPipeline:
                 }
             )
             
-            # Start Textract analysis
+            # Start Textract analysis and get OCR result
             textract_result = await textract_service.start_document_analysis(
                 s3_key=document["s3_key"],
                 document_type=document["doc_type"]
             )
+
+            print("=====================textract_result 1===========================")
+            print(json.dumps(textract_result, indent=4))
+            print("=====================textract_result 1===========================")
             
             # Update document with job ID
             await self.db.execute(
@@ -182,6 +186,10 @@ class ExtractionPipeline:
             textract_result = await textract_service.get_document_analysis_result(
                 job_id=document["textract_job_id"]
             )
+
+            print("=====================textract_result===========================")
+            print(textract_result)
+            print("=====================textract_result===========================")
             
             if textract_result["status"] == "IN_PROGRESS":
                 return {
@@ -203,7 +211,7 @@ class ExtractionPipeline:
                         "document_id": document_id,
                         "error_data": json.dumps({
                             "error": textract_result.get("error", "Unknown error"),
-                            "failed_at": datetime.utcnow().isoformat()
+                            "failed_at": datetime.now().isoformat()
                         })
                     }
                 )
@@ -217,12 +225,20 @@ class ExtractionPipeline:
                     document_type=document["doc_type"]
                 )
                 
+                print("=====================normalized_data===========================")
+                print(normalized_data)
+                print("=====================normalized_data===========================")
+
                 # Validate normalized data using tax validators
                 validation_results = await tax_validator.validate_document_data(
                     document_data=normalized_data,
                     document_type=document["doc_type"]
                 )
-                
+
+                print("=====================validation_results===========================")
+                print(validation_results)
+                print("=====================validation_results===========================")
+                            
                 # Update document with extracted data
                 await self.db.execute(
                     text("""
@@ -251,7 +267,7 @@ class ExtractionPipeline:
                     "status": "extracted" if validation_results["overall_valid"] else "validation_failed",
                     "extracted_data": normalized_data,
                     "validation_results": validation_results,
-                    "completed_at": datetime.utcnow().isoformat()
+                    "completed_at": datetime.now().isoformat()
                 }
             
             return {
@@ -420,7 +436,7 @@ class ExtractionPipeline:
                 "validation_checks": {},
                 "errors": [],
                 "warnings": [],
-                "validated_at": datetime.utcnow().isoformat()
+                "validated_at": datetime.now().isoformat()
             }
             
             extracted_fields = normalized_data.get("extracted_fields", {})
@@ -474,7 +490,7 @@ class ExtractionPipeline:
                 "validation_checks": {},
                 "errors": [f"Validation failed: {str(e)}"],
                 "warnings": [],
-                "validated_at": datetime.utcnow().isoformat()
+                "validated_at": datetime.now().isoformat()
             }
     
     def _get_required_fields(self, document_type: str) -> List[str]:

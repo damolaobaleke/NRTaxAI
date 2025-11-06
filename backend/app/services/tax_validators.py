@@ -136,7 +136,7 @@ class TaxValidator:
                 "cross_validations": {},
                 "errors": [],
                 "warnings": [],
-                "validated_at": datetime.utcnow().isoformat()
+                "validated_at": datetime.now().isoformat()
             }
             
             extracted_fields = document_data.get("extracted_fields", {})
